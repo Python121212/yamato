@@ -2,18 +2,22 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>宇宙戦艦ヤマト - テクスチャ強制表示版</title>
+    <title>宇宙戦艦ヤマト Web Game - テクスチャ完全修正版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
-        #gui { position: absolute; top: 10px; left: 10px; color: #00ff00; font-family: monospace; pointer-events: none; text-shadow: 1px 1px 2px black; }
+        #gui { position: absolute; top: 10px; left: 10px; color: #00ff00; font-family: monospace; pointer-events: none; text-shadow: 1px 1px 2px black; line-height: 1.4; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; text-align: center; }
     </style>
 </head>
 <body>
-    <div id="loading">ヤマト発進準備中...<br><span id="progress">0%</span></div>
+    <div id="loading">
+        ヤマト最終調整中...<br>
+        <span id="progress">0%</span>
+    </div>
     <div id="gui">
-        WASD: 移動 | 矢印: 旋回 | SPACE: 加速<br>
-        Q/E: ズームアップ・バック
+        WASD: 移動 | 矢印キー: 旋回<br>
+        SPACE: 加速 | SHIFT: 減速<br>
+        Q: ズームアップ | E: ズームバック
     </div>
 
     <script type="importmap">
@@ -31,50 +35,50 @@
 
         let scene, camera, renderer, yamato;
         const keys = {};
-        let speed = 0, camDist = 1000, camHeight = 300;
+        let speed = 0;
+        let camDist = 1000; 
+        let camHeight = 300;
+
+        // モデルの場所
+        const MODEL_PATH = 'models/yamato.pmx'; 
 
         init();
         animate();
 
         function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 500000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            // 光源をかなり強く設定
+            // 明るさを最大級に（テクスチャを確認しやすくするため）
             scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-            const sun = new THREE.DirectionalLight(0xffffff, 2.0);
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
             sun.position.set(500, 1000, 500);
             scene.add(sun);
 
             createStars();
 
-            const loader = new MMDLoader();
-            // テクスチャのベースパスを強制指定
+            // --- 【重要】テクスチャのURLを自動修正するマネージャー ---
+            const manager = new THREE.LoadingManager();
+            manager.setURLModifier((url) => {
+                // URLに + が含まれている場合、%2B に置き換えてサーバーに伝える
+                if (url.includes('+')) {
+                    console.log("URLを修正しました:", url);
+                    return url.replace(/\+/g, '%2B');
+                }
+                return url;
+            });
+
+            const loader = new MMDLoader(manager);
+            // リソースパスをモデルのあるフォルダに固定
             loader.setResourcePath('models/'); 
 
-            loader.load('models/yamato.pmx', (mesh) => {
+            loader.load(MODEL_PATH, (mesh) => {
                 yamato = mesh;
-
-                // --- 【消えているパーツを強制的に表示させる処理】 ---
-                yamato.traverse(function (child) {
-                    if (child.isMesh) {
-                        child.material.forEach(mat => {
-                            // テクスチャが読み込めていない(null)場合でも透明にしない
-                            if (!mat.map) {
-                                mat.color.setHex(0x666666); // 画像がないパーツを灰色にする
-                            }
-                            mat.transparent = false;  // 透明設定をオフにする
-                            mat.opacity = 1.0;        // 不透明度を最大にする
-                            mat.side = THREE.DoubleSide; // 裏側も表示する
-                        });
-                    }
-                });
-
                 scene.add(yamato);
                 document.getElementById('loading').style.display = 'none';
             }, 
@@ -94,13 +98,13 @@
         function createStars() {
             const vertices = [];
             for (let i = 0; i < 15000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(50000));
-                vertices.push(THREE.MathUtils.randFloatSpread(50000));
-                vertices.push(THREE.MathUtils.randFloatSpread(50000));
+                vertices.push(THREE.MathUtils.randFloatSpread(20000));
+                vertices.push(THREE.MathUtils.randFloatSpread(20000));
+                vertices.push(THREE.MathUtils.randFloatSpread(20000));
             }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 4 })));
+            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 3 })));
         }
 
         function onWindowResize() {
@@ -111,10 +115,11 @@
 
         function animate() {
             requestAnimationFrame(animate);
+
             if (yamato) {
                 if (keys['Space']) speed += 0.5;
                 if (keys['ShiftLeft']) speed -= 0.5;
-                speed *= 0.96; 
+                speed *= 0.95; 
                 yamato.translateZ(-speed);
 
                 const rotS = 0.02;
@@ -137,6 +142,7 @@
                 camera.position.lerp(cameraOffset, 0.1);
                 camera.lookAt(yamato.position);
             }
+
             renderer.render(scene, camera);
         }
     </script>

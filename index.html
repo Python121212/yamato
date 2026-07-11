@@ -2,356 +2,89 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Space Battleship Yamato - Three.js Web Game</title>
+    <title>Space Battleship Yamato Web Game</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #020208;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            user-select: none;
-        }
-
-        /* 宇宙空間のHUD（UI）スタイル */
-        #ui-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            box-sizing: border-box;
-            border: 2px solid rgba(0, 180, 255, 0.2);
-        }
-
-        .hud-panel {
-            position: absolute;
-            color: #00f0ff;
-            background: rgba(2, 6, 26, 0.75);
-            border: 1px solid #005588;
-            box-shadow: 0 0 15px rgba(0, 150, 255, 0.3);
-            padding: 15px;
-            border-radius: 4px;
-            pointer-events: auto;
-        }
-
-        #info-panel {
-            top: 20px;
-            left: 20px;
-            width: 280px;
-        }
-
-        #controls-panel {
-            bottom: 20px;
-            left: 20px;
-            width: 280px;
-            font-size: 13px;
-            line-height: 1.6;
-        }
-
-        #crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 40px;
-            height: 40px;
-            transform: translate(-50%, -50%);
-            border: 2px solid rgba(0, 240, 255, 0.4);
-            border-radius: 50%;
-            pointer-events: none;
-        }
-        #crosshair::before, #crosshair::after {
-            content: '';
-            position: absolute;
-            background: rgba(0, 240, 255, 0.6);
-        }
-        #crosshair::before { top: 19px; left: 0; width: 40px; height: 2px; }
-        #crosshair::after { top: 0; left: 19px; width: 2px; height: 40px; }
-
-        h3 {
-            margin: 0 0 10px 0;
-            font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            border-bottom: 1px solid #00f0ff;
-            padding-bottom: 5px;
-            color: #fff;
-            text-shadow: 0 0 5px #00f0ff;
-        }
-
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .status-val {
-            font-weight: bold;
-            color: #fff;
-        }
-
-        .btn {
-            background: #003366;
-            color: #00f0ff;
-            border: 1px solid #00f0ff;
-            padding: 8px 12px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 5px;
-            font-weight: bold;
-            transition: all 0.3s;
-            text-transform: uppercase;
-        }
-        .btn:hover {
-            background: #00f0ff;
-            color: #000;
-            box-shadow: 0 0 10px #00f0ff;
-        }
-
-        #loading-screen {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #020208;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #00f0ff;
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(0, 240, 255, 0.1);
-            border-radius: 50%;
-            border-top-color: #00f0ff;
-            animation: spin 1s ease-in-out infinite;
-            margin-bottom: 20px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        #log-box {
-            color: #ffaa00;
-            font-family: monospace;
-            font-size: 12px;
-            margin-top: 10px;
-            max-height: 60px;
-            overflow-y: auto;
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #info {
+            position: absolute; top: 10px; left: 10px; color: white;
+            font-family: sans-serif; pointer-events: none;
         }
     </style>
 </head>
 <body>
+    <div id="info">WASD: 移動 / 矢印: 回転 / Space: 加速</div>
 
-    <!-- 読み込み画面 -->
-    <div id="loading-screen">
-        <div class="spinner"></div>
-        <div id="loading-text" style="font-size: 18px; letter-spacing: 2px;">宇宙戦艦ヤマト 起動準備中...</div>
-        <div id="loading-progress" style="margin-top: 10px; font-size: 14px;">進行度: 0%</div>
-    </div>
-
-    <!-- 照準線 -->
-    <div id="crosshair"></div>
-
-    <div id="ui-container">
-        <!-- HUD ステータスパネル -->
-        <div id="info-panel" class="hud-panel">
-            <h3>YAMATO HUD v1.1</h3>
-            <div class="status-row">
-                <span>波動エンジン:</span>
-                <span id="engine-status" class="status-val" style="color: #00ff88;">ONLINE</span>
-            </div>
-            <div class="status-row">
-                <span>巡航速度:</span>
-                <span id="speed-val" class="status-val">0 宇宙ノット</span>
-            </div>
-            <div class="status-row">
-                <span>敵ガミラス艦数:</span>
-                <span id="enemy-count" class="status-val" style="color: #ff3333;">3</span>
-            </div>
-            <button class="btn" id="fire-btn">主砲ショックカノン発射</button>
-            <div id="log-box">Googleドライブ直リンク接続中...</div>
-        </div>
-
-        <!-- コントロール説明パネル -->
-        <div id="controls-panel" class="hud-panel">
-            <h3>戦艦操縦マニュアル</h3>
-            <div>[ W ] キー : 前進加速</div>
-            <div>[ S ] キー : 後退 / 減速</div>
-            <div>[ A ] / [ D ] キー : 左右旋回 (Yaw)</div>
-            <div>[ R ] / [ F ] キー : 上昇 / 下降 (Pitch)</div>
-            <div>[ スペース ] キー : 主砲発射 (ショックカノン)</div>
-        </div>
-    </div>
-
-    <!-- Import Maps -->
+    <!-- Three.js と MMDLoader の読み込み -->
     <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
         }
-      }
     </script>
 
     <script type="module">
         import * as THREE from 'three';
         import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
-        let scene, camera, renderer;
-        let yamatoMesh = null;
-        let starsField;
-        
-        let speed = 0;
-        const maxSpeed = 2.5;
-        const acceleration = 0.03;
-        const friction = 0.985;
-        
-        const keys = { w: false, s: false, a: false, d: false, r: false, f: false, space: false };
-        const lasers = [];
-        const enemies = [];
-        
-        function gameLog(text, color = '#ffaa00') {
-            const box = document.getElementById('log-box');
-            if (box) {
-                box.innerHTML = text;
-                box.style.color = color;
-            }
-        }
+        let scene, camera, renderer, yamato;
+        const keys = {};
 
         init();
         animate();
 
         function init() {
+            // 1. シーンの作成
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x020208, 0.0015);
 
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-            camera.position.set(0, 15, -60);
+            // 2. カメラの作成
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+            camera.position.set(0, 5, 20);
 
+            // 3. レンダラー
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            // 4. 光源
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(10, 10, 10);
+            scene.add(directionalLight);
 
-            const sunLight = new THREE.DirectionalLight(0xddeeff, 1.5);
-            sunLight.position.set(200, 400, 300);
-            scene.add(sunLight);
+            // 5. 宇宙の星空（背景）
+            createStars();
 
-            createSpaceBackground();
-            createGamilasEnemies();
-
-            // MMDLoaderの初期化
+            // 6. MMDモデル（ヤマト）の読み込み
             const loader = new MMDLoader();
-            
-            // Googleドライブのダウンロード直リンクURL
-            // 末尾に「&file=.pmx」をくっつけることで、Three.jsが「あ、これはPMXファイルだね」と安全に納得します
-            const modelPath = 'https://docs.google.com/uc?export=download&id=1YqrUFp4vrjZgIyTxD2z3Dg09B9k1K0aq&file=.pmx'; 
+            // モデルのパスを自分のファイル名に合わせて変更してください
+            loader.load('models/yamato.pmx', (mesh) => {
+                yamato = mesh;
+                scene.add(yamato);
+            }, onProgress, onError);
 
-            gameLog("外部ストレージよりデータ抽出中...", "#00f0ff");
-
-            loader.load(
-                modelPath,
-                function (mesh) {
-                    yamatoMesh = mesh;
-                    yamatoMesh.rotation.y = Math.PI; // 後ろを向いているのを正面に変更
-                    scene.add(yamatoMesh);
-
-                    document.getElementById('loading-screen').style.display = 'none';
-                    gameLog("波動エンジン始動。ヤマト発進します！", "#00ff88");
-                },
-                function (xhr) {
-                    if (xhr.total > 0) {
-                        const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                        document.getElementById('loading-progress').innerText = `進行度: ${percent}%`;
-                    }
-                },
-                function (error) {
-                    console.error(error);
-                    document.getElementById('loading-text').innerHTML = 
-                        "<span style='color:#ff3333;'>読み込み失敗</span><br><br>" +
-                        "Googleドライブ側の共有権限が「リンクを知っている全員」になっているか確認してください。";
-                }
-            );
-
-            window.addEventListener('keydown', (e) => handleKeys(e, true));
-            window.addEventListener('keyup', (e) => handleKeys(e, false));
+            // 7. 入力イベント
+            window.addEventListener('keydown', (e) => keys[e.code] = true);
+            window.addEventListener('keyup', (e) => keys[e.code] = false);
             window.addEventListener('resize', onWindowResize);
-            document.getElementById('fire-btn').addEventListener('click', () => fireShockCannon());
         }
 
-        function createSpaceBackground() {
-            const starsGeometry = new THREE.BufferGeometry();
-            const starsCount = 3000;
-            const positions = new Float32Array(starsCount * 3);
-
-            for (let i = 0; i < starsCount * 3; i++) {
-                positions[i] = (Math.random() - 0.5) * 1800;
+        // 星空を作る関数
+        function createStars() {
+            const vertices = [];
+            for (let i = 0; i < 5000; i++) {
+                vertices.push(THREE.MathUtils.randFloatSpread(2000)); // x
+                vertices.push(THREE.MathUtils.randFloatSpread(2000)); // y
+                vertices.push(THREE.MathUtils.randFloatSpread(2000)); // z
             }
-
-            starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 1.8, transparent: true, opacity: 0.8 });
-            starsField = new THREE.Points(starsGeometry, starsMaterial);
-            scene.add(starsField);
-        }
-
-        function createGamilasEnemies() {
-            const enemyGeo = new THREE.BoxGeometry(25, 12, 40);
-            const enemyMat = new THREE.MeshPhongMaterial({ color: 0x0a3f25, emissive: 0xff1111, emissiveIntensity: 0.4 });
-
-            for (let i = 0; i < 3; i++) {
-                const enemy = new THREE.Mesh(enemyGeo, enemyMat);
-                enemy.position.set((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 60, 300 + (i * 200));
-                scene.add(enemy);
-                enemies.push(enemy);
-            }
-        }
-
-        function handleKeys(event, isDown) {
-            const key = event.key.toLowerCase();
-            if (key === 'w' || key === 'arrowup') keys.w = isDown;
-            if (key === 's' || key === 'arrowdown') keys.s = isDown;
-            if (key === 'a' || key === 'arrowleft') keys.a = isDown;
-            if (key === 'd' || key === 'arrowright') keys.d = isDown;
-            if (key === 'r') keys.r = isDown;
-            if (key === 'f') keys.f = isDown;
-            
-            if (key === ' ' && isDown && !keys.space) {
-                fireShockCannon();
-                keys.space = true;
-            }
-            if (key === ' ' && !isDown) keys.space = false;
-        }
-
-        function fireShockCannon() {
-            if (!yamatoMesh) return;
-
-            const laserGeo = new THREE.CylinderGeometry(0.5, 0.5, 20, 4);
-            laserGeo.rotateX(Math.PI / 2);
-            const laserMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
-            const laser = new THREE.Mesh(laserGeo, laserMat);
-
-            laser.position.copy(yamatoMesh.position);
-            laser.position.y += 6; 
-            
-            const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(yamatoMesh.quaternion);
-            
-            laser.userData = { dir: direction, speed: 8.0, life: 100 };
-            scene.add(laser);
-            lasers.push(laser);
-            gameLog("主砲ショックカノン発射！！", "#00ffff");
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7 });
+            const points = new THREE.Points(geometry, material);
+            scene.add(points);
         }
 
         function onWindowResize() {
@@ -360,58 +93,33 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        function onProgress(xhr) { console.log((xhr.loaded / xhr.total * 100) + '% loaded'); }
+        function onError(e) { console.error('エラーが発生しました', e); }
+
+        // メインループ
         function animate() {
             requestAnimationFrame(animate);
 
-            if (yamatoMesh) {
-                if (keys.w) speed += acceleration;
-                if (keys.s) speed -= acceleration;
-                speed *= friction; 
+            if (yamato) {
+                // 移動ロジック
+                const speed = keys['Space'] ? 1.0 : 0.2;
                 
-                document.getElementById('speed-val').innerText = `${Math.abs(Math.round(speed * 120))} 宇宙ノット`;
+                // 回転（矢印キー）
+                if (keys['ArrowLeft']) yamato.rotation.y += 0.02;
+                if (keys['ArrowRight']) yamato.rotation.y -= 0.02;
+                if (keys['ArrowUp']) yamato.rotation.x -= 0.01;
+                if (keys['ArrowDown']) yamato.rotation.x += 0.01;
 
-                if (keys.a) yamatoMesh.rotation.y += 0.025;
-                if (keys.d) yamatoMesh.rotation.y -= 0.025;
-                if (keys.r) yamatoMesh.rotation.x += 0.018;
-                if (keys.f) yamatoMesh.rotation.x -= 0.018;
-
-                const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(yamatoMesh.quaternion);
-                yamatoMesh.position.addScaledVector(forward, speed);
-
-                const relativeOffset = new THREE.Vector3(0, 14, -65);
-                const cameraOffset = relativeOffset.applyQuaternion(yamatoMesh.quaternion);
-                camera.position.copy(yamatoMesh.position).add(cameraOffset);
-                
-                const lookTarget = new THREE.Vector3(0, 6, 50).applyQuaternion(yamatoMesh.quaternion);
-                camera.lookAt(yamatoMesh.position.clone().add(lookTarget));
-            }
-
-            for (let i = lasers.length - 1; i >= 0; i--) {
-                const l = lasers[i];
-                l.position.addScaledVector(l.userData.dir, l.userData.speed);
-                l.userData.life--;
-
-                for (let j = enemies.length - 1; j >= 0; j--) {
-                    const e = enemies[j];
-                    if (l.position.distanceTo(e.position) < 25) {
-                        scene.remove(e);
-                        enemies.splice(j, 1);
-                        scene.remove(l);
-                        lasers.splice(i, 1);
-                        gameLog("命中！目標の完全消滅を確認！", "#ff3333");
-                        document.getElementById('enemy-count').innerText = enemies.length;
-                        break;
-                    }
+                // 前進（Wキーなど、モデルの向きに合わせて調整）
+                if (keys['KeyW']) {
+                    yamato.translateZ(-speed);
                 }
 
-                if (l.userData.life <= 0 && lasers.includes(l)) {
-                    scene.remove(l);
-                    lasers.splice(i, 1);
-                }
-            }
-
-            if (starsField && Math.abs(speed) > 0.1) {
-                starsField.rotation.z += 0.0003;
+                // カメラをヤマトの後ろに追従させる
+                const relativeCameraOffset = new THREE.Vector3(0, 5, 20);
+                const cameraOffset = relativeCameraOffset.applyMatrix4(yamato.matrixWorld);
+                camera.position.lerp(cameraOffset, 0.1);
+                camera.lookAt(yamato.position);
             }
 
             renderer.render(scene, camera);

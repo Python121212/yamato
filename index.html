@@ -2,48 +2,30 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Yamato Tactical Simulation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yamato Turret Debug</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
-        canvas { display: block; }
-
-        /* UIレイヤー */
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: monospace; }
         #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; color: #00ffea; }
-        
-        /* 砲塔選択ボタン（左側） */
-        #turret-selector { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
-        .ui-btn { background: rgba(0, 40, 40, 0.7); border: 1px solid #00ffea; color: #00ffea; padding: 10px; cursor: pointer; text-align: left; min-width: 120px; }
-        .ui-btn.active { background: #00ffea; color: #000; font-weight: bold; }
-        .ui-btn:hover { background: rgba(0, 255, 234, 0.3); }
-
-        /* 弾種・情報（下側） */
-        #bottom-ui { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); text-align: center; width: 80%; }
-        #ammo-info { font-size: 20px; margin-bottom: 10px; border-top: 1px solid #00ffea; padding-top: 10px; }
-        #controls-hint { font-size: 12px; color: #aaa; }
-
+        #turret-selector { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 5px; pointer-events: auto; }
+        .ui-btn { background: rgba(0, 40, 40, 0.8); border: 1px solid #00ffea; color: #00ffea; padding: 8px; cursor: pointer; text-align: left; }
+        .active { background: #00ffea; color: #000; }
+        #debug-log { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); padding: 10px; font-size: 10px; max-height: 200px; overflow-y: auto; pointer-events: auto; width: 200px; border: 1px solid #555; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; }
     </style>
 </head>
 <body>
 
-    <div id="loading">タクティカルシステム起動中... <span id="progress">0%</span></div>
+    <div id="loading">ボーン解析中...</div>
 
     <div id="ui">
-        <div id="turret-selector">
-            <button class="ui-btn active" onclick="selectTurret(-1)">なし (移動・ズーム)</button>
-            <button class="ui-btn" onclick="selectTurret(0)">第一主砲</button>
-            <button class="ui-btn" onclick="selectTurret(1)">第二主砲</button>
-            <button class="ui-btn" onclick="selectTurret(2)">第三主砲</button>
-            <button class="ui-btn" onclick="selectTurret(3)">第一副砲</button>
-            <button class="ui-btn" onclick="selectTurret(4)">第二副砲</button>
+        <div id="debug-log">【ボーン名一覧】<br></div>
+        <div id="turret-selector" id="btn-container">
+            <button class="ui-btn active" id="btn-none">なし (自由視点)</button>
+            <!-- ここに自動でボタンが増えます -->
         </div>
-
-        <div id="bottom-ui">
-            <div id="ammo-info">弾種: <span id="ammo-name">ショックカノン</span> [Xキーで切替]</div>
-            <div id="controls-hint">
-                [ホイール] 旋回 / ズーム | [F] 発射 | [W/S] 加減速 | [A/D] 旋回
-            </div>
+        <div style="position:absolute; bottom:20px; width:100%; text-align:center;">
+            [ホイール] 旋回/ズーム | [F] 発射 | [X] 弾切替 | [W/A/S/D] 移動
         </div>
     </div>
 
@@ -61,13 +43,10 @@
         import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
         let scene, camera, renderer, yamato;
-        let speed = 0, camDist = 1000, camHeight = 300;
+        let speed = 0, camDist = 1000;
         const keys = {}, bullets = [];
-        
-        // 砲塔管理
         let turretBones = [];
-        let activeTurretIdx = -1; // -1は未選択
-        let ammoType = 0; // 0:ショックカノン, 1:三式融合弾
+        let activeIdx = -1;
 
         init();
         animate();
@@ -75,17 +54,11 @@
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 500000);
-            
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-            sun.position.set(500, 1000, 500);
-            scene.add(sun);
-
+            scene.add(new THREE.AmbientLight(0xffffff, 1.5));
             createStars();
 
             const manager = new THREE.LoadingManager();
@@ -97,153 +70,115 @@
                 yamato = mesh;
                 scene.add(yamato);
                 
-                // --- 【ボーンの紐付け】 ---
-                // モデル内のボーン名に合わせて検索（ここはモデルによって調整が必要）
-                const searchNames = ["第一主砲", "第二主砲", "第三主砲", "第一副砲", "第二副砲"];
-                searchNames.forEach(name => {
-                    const bone = yamato.skeleton.bones.find(b => b.name.includes(name) && !b.name.includes("砲身"));
-                    if(bone) turretBones.push(bone);
+                const logEl = document.getElementById('debug-log');
+                const btnContainer = document.getElementById('turret-selector');
+
+                // --- 【ボーン解析システム】 ---
+                yamato.skeleton.bones.forEach((bone, index) => {
+                    // 全ボーン名をログに出す
+                    logEl.innerHTML += `${index}: ${bone.name}<br>`;
+                    console.log(`ボーン[${index}]: ${bone.name}`);
+
+                    // 「主砲」「副砲」「砲塔」「Turret」が含まれるボーンを自動登録
+                    // ただし「砲身」など上下に動くボーンは除外（旋回用のみ）
+                    const n = bone.name;
+                    if ((n.includes("砲") || n.includes("Turret")) && !n.includes("身") && !n.includes("先")) {
+                        const idx = turretBones.length;
+                        turretBones.push(bone);
+
+                        // ボタンを自動作成
+                        const btn = document.createElement('button');
+                        btn.className = 'ui-btn';
+                        btn.innerText = n;
+                        btn.onclick = () => {
+                            activeIdx = idx;
+                            document.querySelectorAll('.ui-btn').forEach(b => b.classList.remove('active'));
+                            btn.classList.add('active');
+                        };
+                        btnContainer.appendChild(btn);
+                    }
                 });
+
+                document.getElementById('btn-none').onclick = () => {
+                    activeIdx = -1;
+                    document.querySelectorAll('.ui-btn').forEach(b => b.classList.remove('active'));
+                    document.getElementById('btn-none').classList.add('active');
+                };
 
                 document.getElementById('loading').style.display = 'none';
-            }, (xhr) => {
-                document.getElementById('progress').innerText = Math.round(xhr.loaded / xhr.total * 100) + "%";
             });
 
-            // スクロール（ホイール）イベント
+            // スクロール操作
             window.addEventListener('wheel', (e) => {
-                if (activeTurretIdx === -1) {
-                    // 未選択時はズーム
-                    camDist += e.deltaY * 0.5;
-                    camDist = Math.max(200, Math.min(5000, camDist));
-                } else {
-                    // 砲塔選択時は砲塔を回転
-                    if (turretBones[activeTurretIdx]) {
-                        turretBones[activeTurretIdx].rotation.y -= e.deltaY * 0.001;
-                    }
+                if (activeIdx === -1) {
+                    camDist += e.deltaY;
+                } else if (turretBones[activeIdx]) {
+                    // 砲塔を回転（感度を少し下げています）
+                    turretBones[activeIdx].rotation.y -= e.deltaY * 0.0005;
                 }
-            }, { passive: true });
-
-            // キー入力
-            window.addEventListener('keydown', e => {
-                keys[e.code] = true;
-                if(e.code === 'KeyX') switchAmmo();
-                if(e.code === 'KeyF') fire();
             });
+
+            window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='KeyF') fire(); });
             window.addEventListener('keyup', e => keys[e.code] = false);
-
-            window.selectTurret = (idx) => {
-                activeTurretIdx = idx;
-                document.querySelectorAll('.ui-btn').forEach((btn, i) => {
-                    btn.classList.toggle('active', (i - 1) === idx);
-                });
-            };
-
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function switchAmmo() {
-            ammoType = (ammoType + 1) % 2;
-            document.getElementById('ammo-name').innerText = (ammoType === 0) ? "ショックカノン" : "三式融合弾";
-            document.getElementById('ammo-name').style.color = (ammoType === 0) ? "#00ffff" : "#ffaa00";
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
         }
 
         function fire() {
             if (!yamato) return;
-            // 全ての砲塔、または選択中の砲塔から発射
-            const targets = (activeTurretIdx === -1) ? turretBones : [turretBones[activeTurretIdx]];
-            
+            const targets = (activeIdx === -1) ? turretBones : [turretBones[activeIdx]];
             targets.forEach(bone => {
-                const isShock = (ammoType === 0);
-                const geo = isShock ? new THREE.CylinderGeometry(2, 2, 80, 8) : new THREE.SphereGeometry(5, 8, 8);
-                if(isShock) geo.rotateX(Math.PI / 2);
-                
-                const mat = new THREE.MeshBasicMaterial({ color: isShock ? 0x00ffff : 0xffaa00 });
-                const bullet = new THREE.Mesh(geo, mat);
-                
+                const geo = new THREE.CylinderGeometry(2, 2, 80, 8);
+                geo.rotateX(Math.PI/2);
+                const bullet = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: 0x00ffff}));
                 const worldPos = new THREE.Vector3();
                 const worldQuat = new THREE.Quaternion();
                 bone.getWorldPosition(worldPos);
                 bone.getWorldQuaternion(worldQuat);
-                
                 bullet.position.copy(worldPos);
                 bullet.quaternion.copy(worldQuat);
-                bullet.translateZ(-50);
-                
-                bullet.userData.velocity = isShock ? 60 : 35;
-                bullet.userData.life = 120;
-                bullet.userData.type = ammoType;
-
+                bullet.userData.life = 100;
                 bullets.push(bullet);
                 scene.add(bullet);
             });
         }
 
         function createStars() {
-            const vertices = [];
-            for (let i = 0; i < 10000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(80000));
-                vertices.push(THREE.MathUtils.randFloatSpread(80000));
-                vertices.push(THREE.MathUtils.randFloatSpread(80000));
-            }
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 5 })));
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            const v = [];
+            for(let i=0; i<10000; i++) v.push(THREE.MathUtils.randFloatSpread(50000),THREE.MathUtils.randFloatSpread(50000),THREE.MathUtils.randFloatSpread(50000));
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+            scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xffffff, size:4})));
         }
 
         function animate() {
             requestAnimationFrame(animate);
-
             if (yamato) {
-                // 移動
-                if (keys['KeyW']) speed += 0.3;
-                if (keys['KeyS']) speed -= 0.3;
-                speed *= 0.96; 
+                if (keys['KeyW']) speed += 0.4;
+                speed *= 0.96;
                 yamato.translateZ(-speed);
-
                 if (keys['KeyA']) yamato.rotation.y += 0.01;
                 if (keys['KeyD']) yamato.rotation.y -= 0.01;
-                
-                // カメラ設定
-                let targetCamPos;
-                if (activeTurretIdx === -1) {
-                    // 通常視点
-                    targetCamPos = new THREE.Vector3(0, camHeight, camDist).applyMatrix4(yamato.matrixWorld);
-                    camera.position.lerp(targetCamPos, 0.1);
+
+                if (activeIdx === -1) {
+                    const offset = new THREE.Vector3(0, 300, camDist).applyMatrix4(yamato.matrixWorld);
+                    camera.position.lerp(offset, 0.1);
                     camera.lookAt(yamato.position);
                 } else {
-                    // FPD視点 (選択中の砲塔の少し後ろ・上に配置)
-                    const bone = turretBones[activeTurretIdx];
-                    const fpdOffset = new THREE.Vector3(0, 30, 100); 
-                    targetCamPos = fpdOffset.applyMatrix4(bone.matrixWorld);
-                    camera.position.lerp(targetCamPos, 0.2);
-                    
-                    // 砲塔の向いている先を見る
-                    const lookTarget = new THREE.Vector3(0, 0, -1000).applyMatrix4(bone.matrixWorld);
-                    camera.lookAt(lookTarget);
+                    const bone = turretBones[activeIdx];
+                    const offset = new THREE.Vector3(0, 50, 150).applyMatrix4(bone.matrixWorld);
+                    camera.position.lerp(offset, 0.2);
+                    const look = new THREE.Vector3(0, 0, -1000).applyMatrix4(bone.matrixWorld);
+                    camera.lookAt(look);
                 }
             }
-
-            // 弾の更新
-            for (let i = bullets.length - 1; i >= 0; i--) {
-                const b = bullets[i];
-                b.translateZ(-b.userData.velocity);
-                // 三式融合弾なら少し重力で落とすと雰囲気が出る
-                if(b.userData.type === 1) b.position.y -= 0.5;
-                
-                b.userData.life--;
-                if (b.userData.life <= 0) {
-                    scene.remove(b);
-                    bullets.splice(i, 1);
-                }
+            for(let i=bullets.length-1; i>=0; i--) {
+                bullets[i].translateZ(-60);
+                if(--bullets[i].userData.life <= 0) { scene.remove(bullets[i]); bullets.splice(i,1); }
             }
-
             renderer.render(scene, camera);
         }
     </script>

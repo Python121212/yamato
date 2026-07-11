@@ -3,17 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Space Battleship Yamato Game</title>
+    <title>宇宙戦艦ヤマト Web Game</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
-        #gui { position: absolute; top: 10px; left: 10px; color: #00ff00; font-family: monospace; pointer-events: none; text-shadow: 1px 1px 2px black; }
+        #gui { position: absolute; top: 10px; left: 10px; color: #00ff00; font-family: monospace; pointer-events: none; text-shadow: 1px 1px 2px black; line-height: 1.5; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; font-size: 20px; }
     </style>
 </head>
 <body>
     <div id="loading">ヤマト発進準備中...</div>
     <div id="gui">
-        WASD: 移動 | 矢印キー: 旋回<br>
+        WASD: 移動 (上下左右) <br>
+        矢印キー: 船体の向きを変える<br>
         SPACE: 加速 | SHIFT: 減速
     </div>
 
@@ -38,54 +39,47 @@
         animate();
 
         function init() {
-            // シーン
             scene = new THREE.Scene();
 
-            // カメラ (少し遠目に配置)
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
-            camera.position.set(30, 200, 300);
-
-            // レンダラー
+            // --- 【ここを調整：カメラの見える範囲】 ---
+            // 最後の 100000 は「どこまで遠くが見えるか」。ヤマトが巨大なら大きくする
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 100000);
+            
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            // 光源 (宇宙なので強めに)
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            // --- 【ここを調整：明るさ】 ---
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // 全体の明るさ
             scene.add(ambientLight);
-            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-            sun.position.set(100, 100, 100);
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5); // 太陽光のような光
+            sun.position.set(100, 500, 100);
             scene.add(sun);
 
-            // 宇宙の星
             createStars();
 
-            // MMDローダー
             const loader = new MMDLoader();
-            
-            // テクスチャ読み込みエラーで止まらないための設定
-            loader.load('models/yamato.pmx', (mesh) => {
+            loader.load('yamato.pmx', (mesh) => {
                 yamato = mesh;
-                
-                // ヤマトが巨大すぎる場合があるのでサイズ調整（必要に応じて変更）
-                // yamato.scale.set(10, 10, 10); 
-                
+
+                // --- 【ここを調整：ヤマトの大きさ】 ---
+                // もしヤマトが小さすぎたり大きすぎたりしたらここをいじる
+                // yamato.scale.set(0.5, 0.5, 0.5); // 半分にする場合
+                // yamato.scale.set(10, 10, 10);   // 10倍にする場合
+
                 scene.add(yamato);
                 document.getElementById('loading').style.display = 'none';
-                console.log("ヤマト 読み込み完了");
             }, 
             (xhr) => {
                 const percent = Math.round(xhr.loaded / xhr.total * 100);
                 document.getElementById('loading').innerText = `読み込み中: ${percent}%`;
             }, 
             (error) => {
-                console.error("読み込みエラーが発生しましたが、続行を試みます:", error);
-                // エラーが出ても「読み込み中」表示を消す
+                console.error("読み込みエラー:", error);
                 document.getElementById('loading').style.display = 'none';
             });
 
-            // 入力管理
             window.addEventListener('keydown', (e) => keys[e.code] = true);
             window.addEventListener('keyup', (e) => keys[e.code] = false);
             window.addEventListener('resize', onWindowResize);
@@ -93,14 +87,14 @@
 
         function createStars() {
             const vertices = [];
-            for (let i = 0; i < 10000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(5000));
-                vertices.push(THREE.MathUtils.randFloatSpread(5000));
-                vertices.push(THREE.MathUtils.randFloatSpread(5000));
+            for (let i = 0; i < 15000; i++) {
+                vertices.push(THREE.MathUtils.randFloatSpread(10000));
+                vertices.push(THREE.MathUtils.randFloatSpread(10000));
+                vertices.push(THREE.MathUtils.randFloatSpread(10000));
             }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5 });
+            const material = new THREE.PointsMaterial({ color: 0xffffff, size: 2 });
             scene.add(new THREE.Points(geometry, material));
         }
 
@@ -114,30 +108,38 @@
             requestAnimationFrame(animate);
 
             if (yamato) {
-                // 加速・減速
-                if (keys['Space']) speed += 0.05;
-                if (keys['ShiftLeft']) speed -= 0.05;
-                speed *= 0.98; // 摩擦的な減速
+                // --- 【ここを調整：移動スピード】 ---
+                const accel = 0.1;   // 加速の鋭さ
+                const maxSpeed = 10; // 最大速度（これ以上速くならない）
+
+                if (keys['Space']) speed += accel;
+                if (keys['ShiftLeft']) speed -= accel;
+                speed *= 0.98; // 慣性（少しずつ止まる）
 
                 // 前進移動
+                // モデルの向きによって translateZ か translateX か変わる場合があります
                 yamato.translateZ(-speed);
 
-                // 回転（旋回）
-                if (keys['ArrowLeft']) yamato.rotation.y += 0.02;
-                if (keys['ArrowRight']) yamato.rotation.y -= 0.02;
-                if (keys['ArrowUp']) yamato.rotation.x -= 0.01;
-                if (keys['ArrowDown']) yamato.rotation.x += 0.01;
+                // --- 【ここを調整：回転スピード】 ---
+                const rotateSpeed = 0.02;
+                if (keys['ArrowLeft']) yamato.rotation.y += rotateSpeed;
+                if (keys['ArrowRight']) yamato.rotation.y -= rotateSpeed;
+                if (keys['ArrowUp']) yamato.rotation.x -= rotateSpeed / 2;
+                if (keys['ArrowDown']) yamato.rotation.x += rotateSpeed / 2;
                 
-                // 左右移動 (A, D)
-                if (keys['KeyA']) yamato.translateX(speed + 0.5);
-                if (keys['KeyD']) yamato.translateX(-(speed + 0.5));
-                if (keys['KeyW']) yamato.translateY(-0.5);
-                if (keys['KeyS']) yamato.translateY(0.5);
+                // WASDで平行移動
+                if (keys['KeyA']) yamato.translateX(2);
+                if (keys['KeyD']) yamato.translateX(-2);
+                if (keys['KeyW']) yamato.translateY(2);
+                if (keys['KeyS']) yamato.translateY(-2);
 
-                // カメラの追従
-                const relativeCameraOffset = new THREE.Vector3(0, 30, 150);
+                // --- 【★ここが最重要：カメラの追従位置★】 ---
+                // Vector3(左右, 高さ, 後ろの距離)
+                // うまっちゃう場合は、2番目(高さ)と3番目(後ろ)の数字を大きくしてください！
+                const relativeCameraOffset = new THREE.Vector3(0, 100, 500); 
+
                 const cameraOffset = relativeCameraOffset.applyMatrix4(yamato.matrixWorld);
-                camera.position.lerp(cameraOffset, 0.1);
+                camera.position.lerp(cameraOffset, 0.1); // 0.1はカメラの滑らかさ
                 camera.lookAt(yamato.position);
             }
 

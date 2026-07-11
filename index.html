@@ -58,7 +58,7 @@
     <div id="reticle"></div>
 
     <div id="bottom">
-        [W/S] 前進/後進 | [A/D] 旋回 | [縦スクロール] 砲身上下 | [横スクロール] 砲塔旋回 | [F] 砲撃 | [X] 兵装切替
+        [W/S] 前進/後進 | [A/D] 旋回 | 航行時[横スクロール] 視点変更 | 砲塔選択時[縦横スクロール] 照準操作 | [F] 砲撃 | [X] 兵装切替
     </div>
 </div>
 
@@ -76,7 +76,7 @@
     import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
     let scene, camera, renderer, yamato;
-    let speed = 0, camDist = 3000;
+    let speed = 0, camDist = 3000, camYaw = 0.5; // camYawで自由視点時の横スクロール回転を管理
     const keys = {};
     const bullets = [];
     const targets = [];
@@ -186,10 +186,13 @@
 
         window.addEventListener('wheel', (e) => {
             if (activeIdx !== -1 && turrets[activeIdx]) {
+                // 砲塔操作時: 横で旋回、縦で上下
                 turretAngles[activeIdx].yaw -= e.deltaX * 0.002;
                 turretAngles[activeIdx].pitch -= e.deltaY * 0.002;
                 turretAngles[activeIdx].pitch = Math.max(-0.05, Math.min(0.7, turretAngles[activeIdx].pitch));
             } else {
+                // 自由航行時: 横スクロール（deltaX）でカメラ旋回、縦スクロール（deltaY）でズーム
+                camYaw -= e.deltaX * 0.0015;
                 camDist = Math.max(800, Math.min(15000, camDist + e.deltaY * 3));
             }
         }, { passive: true });
@@ -281,7 +284,6 @@
         const shootPoints = t.barrels.length > 0 ? t.barrels : [t.base];
         shootPoints.forEach(p => {
             const isShock = (ammoType === 0);
-            // ショックカノンのサイズを極大化（太さ40、長さ800へさらにアップ）
             const geo = isShock ? new THREE.CylinderGeometry(40, 40, 800, 12) : new THREE.SphereGeometry(60, 12, 12);
             if(isShock) geo.rotateX(Math.PI/2);
             
@@ -298,10 +300,13 @@
             p.getWorldPosition(worldPos);
             p.getWorldQuaternion(worldQuat);
             
-            bullet.position.copy(worldPos);
-            bullet.quaternion.copy(worldQuat);
-            
+            // 砲身ボーンの向き（Z軸方向）のベクトルを正確に算出
             const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat).normalize();
+            
+            // 【修正点】砲塔の先端からまっすぐ発射されるよう、弾体の初期位置を前方にずらす
+            const barrelLengthOffset = 180; // 砲身パーツの長さに合わせて先端へオフセット
+            bullet.position.copy(worldPos).addScaledVector(dir, barrelLengthOffset);
+            bullet.quaternion.copy(worldQuat);
             
             bullet.userData = { 
                 life: 150, 
@@ -408,12 +413,13 @@
             });
 
             if (activeIdx === -1) {
-                // 画像を参考に、船体を斜め後ろからダイナミックに見下ろすクォータービューへ変更
-                // Xに横オフセットを足すことで、船の「真横〜斜め後ろ」の視点を作ります
-                const offset = new THREE.Vector3(camDist * 0.7, camDist * 0.4, -camDist * 0.8).applyMatrix4(yamato.matrixWorld);
+                // 【修正点】camYawを使って横スクロールによるカメラ旋回角度を動的に反映
+                const offsetX = Math.sin(camYaw) * camDist * 0.8;
+                const offsetZ = -Math.cos(camYaw) * camDist * 0.8;
+                
+                const offset = new THREE.Vector3(offsetX, camDist * 0.4, offsetZ).applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(offset, 0.06);
                 
-                // カメラの視点は大和の少し前方に固定して、走っている臨場感をアップ
                 const targetLook = yamato.position.clone().add(new THREE.Vector3(0, 50, 400).applyQuaternion(yamato.quaternion));
                 camera.lookAt(targetLook);
             } else {

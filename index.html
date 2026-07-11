@@ -3,54 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Yamato Main Battery Control</title>
+    <title>Yamato Tactical Control System</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
-        #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; color: #00ff00; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Share Tech Mono', monospace; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; color: #00ffea; }
         
-        /* 照準情報 */
-        #aim-info { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 18px; text-shadow: 0 0 10px #00ff00; }
-        
-        /* 操作ガイド */
-        #guide { position: absolute; bottom: 20px; left: 20px; font-size: 12px; }
+        /* 砲塔選択ボタン（上部） */
+        #turret-selector { position: absolute; top: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: auto; }
+        .t-btn { padding: 10px 15px; background: rgba(0, 40, 40, 0.7); border: 1px solid #00ffea; color: #00ffea; cursor: pointer; font-size: 12px; }
+        .t-btn.active { background: #00ffea; color: #000; font-weight: bold; }
 
-        /* 発射ボタン（右中央） */
-        #fire-control {
-            position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
-            width: 100px; height: 100px; border-radius: 50%;
-            border: 4px double #00ff00; background: rgba(0, 255, 0, 0.1);
-            color: #00ff00; font-weight: bold; font-size: 20px;
-            display: flex; align-items: center; justify-content: center;
-            pointer-events: auto; cursor: pointer; user-select: none;
-        }
-        #fire-control:active { background: rgba(255, 0, 0, 0.5); border-color: #ff0000; color: #ff0000; }
+        /* 武器切り替え（右下） */
+        #weapon-system { position: absolute; bottom: 40px; right: 20px; pointer-events: auto; display: flex; flex-direction: column; gap: 10px; }
+        .w-btn { width: 150px; padding: 15px; background: rgba(255, 100, 0, 0.2); border: 1px solid #ff6a00; color: #ff6a00; cursor: pointer; text-align: center; }
+        .w-btn.selected { background: #ff6a00; color: #fff; box-shadow: 0 0 15px #ff6a00; }
+        .w-btn.blue { border-color: #00ccff; color: #00ccff; }
+        .w-btn.blue.selected { background: #00ccff; color: #fff; box-shadow: 0 0 15px #00ccff; }
 
-        /* 装填インジケーター */
-        #reload-bar { width: 100px; height: 5px; background: #333; margin-top: 10px; position: absolute; bottom: -20px; }
-        #reload-fill { width: 100%; height: 100%; background: #00ff00; transition: width 0.1s; }
+        #fire-btn { width: 150px; height: 60px; background: rgba(255,0,0,0.3); border: 2px solid red; color: white; font-weight: bold; margin-top: 10px; cursor: pointer; }
 
+        #info { position: absolute; bottom: 20px; left: 20px; font-size: 12px; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; }
     </style>
 </head>
 <body>
 
-    <div id="loading">主砲管制システム起動中...</div>
+    <div id="loading">タクティカルモード起動中... <span id="progress">0%</span></div>
 
-    <div id="ui">
-        <div id="aim-info">
-            TURRET ANGLE: <span id="angle-val">0</span>°<br>
-            <span style="font-size: 12px;">SCROLL TO AIM / CLICK TO FIRE</span>
+    <div id="ui-layer">
+        <div id="turret-selector">
+            <button class="t-btn" data-id="1">第一主砲</button>
+            <button class="t-btn" data-id="2">第二主砲</button>
+            <button class="t-btn" data-id="3">第三主砲</button>
+            <button class="t-btn" data-id="sec1">第一副砲</button>
+            <button class="t-btn" data-id="sec2">第二副砲</button>
+            <button class="t-btn" id="btn-clear">選択解除</button>
         </div>
 
-        <div id="fire-control">
-            FIRE
-            <div id="reload-bar"><div id="reload-fill"></div></div>
+        <div id="weapon-system">
+            <div class="w-btn blue selected" id="w-shock">ショックカノン</div>
+            <div class="w-btn" id="w-fusion">三式融合弾</div>
+            <button id="fire-btn">FIRE (F)</button>
         </div>
 
-        <div id="guide">
-            MOUSE WHEEL: 主砲旋回<br>
-            WASD: 艦体移動<br>
-            SPACE: 加速 / SHIFT: 減速
+        <div id="info">
+            砲塔選択中：スクロールで仰角操作 / マウスで旋回<br>
+            未選択時：スクロールでズーム
         </div>
     </div>
 
@@ -68,12 +66,22 @@
         import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
         let scene, camera, renderer, yamato;
-        let speed = 0;
-        let turretAngle = 0; // 主砲の現在の角度
-        let reloadTime = 0;   // 装填時間
-        const bullets = [];
-        const turretBones = [];
+        let speed = 0, camDist = 1000;
         const keys = {};
+        const bullets = [];
+        
+        let selectedTurret = null; // 現在選択中の砲塔
+        let weaponType = 'shock'; // shock or fusion
+        let mouseX = 0;
+
+        // 砲塔と砲身のボーンをセットで管理
+        const turrets = {
+            '1': { root: null, barrels: null, angleY: 0, angleX: 0 },
+            '2': { root: null, barrels: null, angleY: 0, angleX: 0 },
+            '3': { root: null, barrels: null, angleY: 0, angleX: 0 },
+            'sec1': { root: null, barrels: null, angleY: 0, angleX: 0 },
+            'sec2': { root: null, barrels: null, angleY: 0, angleX: 0 }
+        };
 
         init();
         animate();
@@ -87,11 +95,7 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-            const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-            sun.position.set(500, 1000, 500);
-            scene.add(sun);
-
+            scene.add(new THREE.AmbientLight(0xffffff, 1.5));
             createStars();
 
             const manager = new THREE.LoadingManager();
@@ -103,63 +107,109 @@
                 yamato = mesh;
                 scene.add(yamato);
                 
-                // 主砲ボーンを探す
+                // ボーンの紐付け（モデルのボーン名に合わせて調整が必要な場合があります）
                 yamato.skeleton.bones.forEach(bone => {
-                    if ((bone.name.includes("主砲") || bone.name.includes("砲塔")) && !bone.name.includes("砲身")) {
-                        turretBones.push(bone);
+                    if (bone.name.includes("第一主砲")) turrets['1'].root = bone;
+                    if (bone.name.includes("第二主砲")) turrets['2'].root = bone;
+                    if (bone.name.includes("第三主砲")) turrets['3'].root = bone;
+                    if (bone.name.includes("第一副砲")) turrets['sec1'].root = bone;
+                    if (bone.name.includes("第二副砲")) turrets['sec2'].root = bone;
+                    
+                    // 砲身（上下）ボーンの検索
+                    if (bone.name.includes("砲身")) {
+                        if (bone.name.includes("第一主砲")) turrets['1'].barrels = bone;
+                        if (bone.name.includes("第二主砲")) turrets['2'].barrels = bone;
+                        if (bone.name.includes("第三主砲")) turrets['3'].barrels = bone;
+                        if (bone.name.includes("第一副砲")) turrets['sec1'].barrels = bone;
+                        if (bone.name.includes("第二副砲")) turrets['sec2'].barrels = bone;
                     }
                 });
+
                 document.getElementById('loading').style.display = 'none';
+            }, (xhr) => {
+                document.getElementById('progress').innerText = Math.round(xhr.loaded / xhr.total * 100) + "%";
             });
 
-            // --- 【スクロールで主砲回転】 ---
+            // --- イベントリスナー ---
+            window.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+            });
+
+            // スクロール操作
             window.addEventListener('wheel', (e) => {
-                // e.deltaY がスクロール量。感度を 0.001 に設定
-                turretAngle -= e.deltaY * 0.001;
+                if (selectedTurret) {
+                    // 砲塔選択中：仰角を動かす
+                    turrets[selectedTurret].angleX += e.deltaY * 0.0005;
+                    turrets[selectedTurret].angleX = Math.max(-0.5, Math.min(0.1, turrets[selectedTurret].angleX));
+                } else {
+                    // 未選択時：ズーム
+                    camDist += e.deltaY * 0.5;
+                    camDist = Math.max(300, Math.min(5000, camDist));
+                }
             });
 
-            // スマホ用のスクロール代わり（スワイプで回転）
-            let touchStartY = 0;
-            window.addEventListener('touchstart', (e) => touchStartY = e.touches[0].clientY);
-            window.addEventListener('touchmove', (e) => {
-                const touchY = e.touches[0].clientY;
-                const diff = touchStartY - touchY;
-                turretAngle += diff * 0.005; // スマホ用感度
-                touchStartY = touchY;
+            // 砲塔選択ボタン
+            document.querySelectorAll('.t-btn[data-id]').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    selectedTurret = btn.dataset.id;
+                };
             });
+            document.getElementById('btn-clear').onclick = () => {
+                document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
+                selectedTurret = null;
+            };
 
-            // 発射ボタン
-            document.getElementById('fire-control').addEventListener('click', fire);
-            window.addEventListener('keydown', (e) => {
-                keys[e.code] = true;
-                if(e.code === 'KeyF' || e.code === 'Enter') fire();
-            });
-            window.addEventListener('keyup', (e) => keys[e.code] = false);
+            // 武器選択ボタン
+            document.getElementById('w-shock').onclick = () => {
+                weaponType = 'shock';
+                document.getElementById('w-shock').classList.add('selected');
+                document.getElementById('w-fusion').classList.remove('selected');
+            };
+            document.getElementById('w-fusion').onclick = () => {
+                weaponType = 'fusion';
+                document.getElementById('w-fusion').classList.add('selected');
+                document.getElementById('w-shock').classList.remove('selected');
+            };
 
-            window.addEventListener('resize', onWindowResize);
+            document.getElementById('fire-btn').onclick = fire;
+            window.addEventListener('keydown', (e) => { if(e.code === 'KeyF') fire(); });
         }
 
         function fire() {
-            if (!yamato || reloadTime > 0) return;
+            if (!yamato) return;
+            const targetIDs = selectedTurret ? [selectedTurret] : ['1', '2', '3']; // 未選択時は全主砲
 
-            reloadTime = 100; // 装填開始
-            
-            turretBones.forEach(bone => {
-                const geo = new THREE.CylinderGeometry(2, 2, 80, 8);
-                geo.rotateX(Math.PI / 2);
-                const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            targetIDs.forEach(id => {
+                const turret = turrets[id];
+                if (!turret.root) return;
+
+                let geo, mat;
+                if (weaponType === 'shock') {
+                    geo = new THREE.CylinderGeometry(2, 2, 200, 8);
+                    geo.rotateX(Math.PI / 2);
+                    mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+                } else {
+                    geo = new THREE.SphereGeometry(8, 8, 8);
+                    mat = new THREE.MeshLambertMaterial({ color: 0xff4400, emissive: 0xff2200 });
+                }
+
                 const bullet = new THREE.Mesh(geo, mat);
-
                 const worldPos = new THREE.Vector3();
                 const worldQuat = new THREE.Quaternion();
-                bone.getWorldPosition(worldPos);
-                bone.getWorldQuaternion(worldQuat);
-
+                
+                // 砲身の先から出す
+                const targetBone = turret.barrels || turret.root;
+                targetBone.getWorldPosition(worldPos);
+                targetBone.getWorldQuaternion(worldQuat);
+                
                 bullet.position.copy(worldPos);
                 bullet.quaternion.copy(worldQuat);
-                bullet.translateZ(-60); // 砲先から出す
-
-                bullet.userData.life = 150;
+                bullet.translateZ(-50);
+                
+                bullet.userData.velocity = weaponType === 'shock' ? 80 : 30;
+                bullet.userData.life = 100;
                 bullets.push(bullet);
                 scene.add(bullet);
             });
@@ -168,55 +218,36 @@
         function createStars() {
             const vertices = [];
             for (let i = 0; i < 10000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(60000));
-                vertices.push(THREE.MathUtils.randFloatSpread(60000));
-                vertices.push(THREE.MathUtils.randFloatSpread(60000));
+                vertices.push(THREE.MathUtils.randFloatSpread(100000));
+                vertices.push(THREE.MathUtils.randFloatSpread(100000));
+                vertices.push(THREE.MathUtils.randFloatSpread(100000));
             }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 5 })));
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 4 })));
         }
 
         function animate() {
             requestAnimationFrame(animate);
-
             if (yamato) {
-                // 移動
-                if (keys['Space']) speed += 0.3;
-                if (keys['ShiftLeft']) speed -= 0.3;
-                speed *= 0.97;
-                yamato.translateZ(-speed);
-
-                // 艦体旋回
-                if (keys['KeyA'] || keys['ArrowLeft']) yamato.rotation.y += 0.015;
-                if (keys['KeyD'] || keys['ArrowRight']) yamato.rotation.y -= 0.015;
-
-                // --- 【主砲回転の適用】 ---
-                turretBones.forEach(bone => {
-                    // lerpを使って滑らかに回転させる
-                    bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, turretAngle, 0.1);
+                // 主砲の動き
+                Object.keys(turrets).forEach(id => {
+                    const t = turrets[id];
+                    if (t.root) {
+                        // 旋回（左右）
+                        if (selectedTurret === id) {
+                            t.angleY = THREE.MathUtils.lerp(t.angleY, -mouseX * Math.PI, 0.05);
+                        }
+                        t.root.rotation.y = t.angleY;
+                    }
+                    if (t.barrels) {
+                        // 仰角（上下）
+                        t.barrels.rotation.x = t.angleX;
+                    }
                 });
 
-                // 表示の更新
-                const displayAngle = Math.round((turretAngle * 180 / Math.PI) % 360);
-                document.getElementById('angle-val').innerText = displayAngle;
-
-                // 装填処理
-                if (reloadTime > 0) {
-                    reloadTime--;
-                    document.getElementById('reload-fill').style.width = (100 - reloadTime) + "%";
-                } else {
-                    document.getElementById('reload-fill').style.width = "100%";
-                }
-
                 // カメラ追従
-                const cameraOffset = new THREE.Vector3(0, 200, 800).applyMatrix4(yamato.matrixWorld);
+                const cameraOffset = new THREE.Vector3(0, 200, camDist).applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(cameraOffset, 0.1);
                 camera.lookAt(yamato.position);
             }
@@ -224,14 +255,13 @@
             // 弾の更新
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
-                b.translateZ(-50);
+                b.translateZ(-b.userData.velocity);
                 b.userData.life--;
                 if (b.userData.life <= 0) {
                     scene.remove(b);
                     bullets.splice(i, 1);
                 }
             }
-
             renderer.render(scene, camera);
         }
     </script>

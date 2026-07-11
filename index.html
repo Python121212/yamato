@@ -2,31 +2,85 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>宇宙戦艦ヤマト - THE GAME</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Yamato Space Warfare</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
-        /* ゲーム画面のUI設定 */
-        #hud {
-            position: absolute; width: 100%; height: 100%;
-            pointer-events: none; color: #00ff00; font-family: 'Courier New', Courier, monospace;
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; }
+
+        /* ゲームUI全体のレイアウト */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* 下の3Dを触れるようにする */
+            color: #00ffea;
         }
-        #crosshair {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 30px; color: #00ff00;
+        .touch-btn {
+            pointer-events: auto; /* ボタンは触れるようにする */
+            background: rgba(0, 255, 234, 0.1);
+            border: 2px solid #00ffea;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            user-select: none; -webkit-tap-highlight-color: transparent;
         }
-        #stats { position: absolute; top: 20px; left: 20px; font-size: 20px; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; text-align: center; }
+        .touch-btn:active { background: rgba(0, 255, 234, 0.4); }
+
+        /* レーダー (左上) */
+        #radar {
+            position: absolute; top: 20px; left: 20px; width: 100px; height: 100px;
+            border-radius: 50%; border: 1px solid #00ffea; background: rgba(0, 50, 50, 0.5);
+        }
+
+        /* 十字キー (左下) */
+        #d-pad {
+            position: absolute; bottom: 40px; left: 40px; width: 150px; height: 150px;
+        }
+        #btn-up    { position: absolute; top: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-down  { position: absolute; bottom: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-left  { position: absolute; left: 0; top: 50px; width: 50px; height: 50px; }
+        #btn-right { position: absolute; right: 0; top: 50px; width: 50px; height: 50px; }
+
+        /* 攻撃ボタン・速度 (右下) */
+        #actions {
+            position: absolute; bottom: 40px; right: 40px; display: flex; flex-direction: column; gap: 20px;
+        }
+        #btn-fire { width: 80px; height: 80px; font-weight: bold; font-size: 14px; border-color: #ff3c00; color: #ff3c00; }
+        #btn-boost { width: 60px; height: 60px; font-size: 12px; }
+
+        /* 体力・速度ゲージ (中央下) */
+        #status-bar {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 250px; text-align: center; pointer-events: none;
+        }
+        #hp-bar { width: 100%; height: 10px; background: #333; border: 1px solid #00ffea; }
+        #hp-fill { width: 100%; height: 100%; background: #00ffea; }
+        
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; }
     </style>
 </head>
 <body>
-    <div id="loading">ヤマト 最終兵装換装中...<br><span id="progress">0%</span></div>
-    
-    <div id="hud">
-        <div id="crosshair">＋</div>
-        <div id="stats">
-            SCORE: <span id="score">0</span><br>
-            SPEED: <span id="speed-disp">0</span><br>
-            [F] 主砲発射 | [SPACE] 加速 | [WASD] 操舵
+
+    <div id="loading">SYSTEM LOADING... <span id="progress">0%</span></div>
+
+    <!-- UI レイヤー -->
+    <div id="ui-layer">
+        <div id="radar"></div>
+        
+        <div id="d-pad">
+            <div id="btn-up" class="touch-btn">▲</div>
+            <div id="btn-down" class="touch-btn">▼</div>
+            <div id="btn-left" class="touch-btn">◀</div>
+            <div id="btn-right" class="touch-btn">▶</div>
+        </div>
+
+        <div id="actions">
+            <div id="btn-fire" class="touch-btn">主砲発射</div>
+            <div id="btn-boost" class="touch-btn">加速</div>
+        </div>
+
+        <div id="status-bar">
+            SPEED: <span id="speed-val">0</span>km/h
+            <div id="hp-bar"><div id="hp-fill"></div></div>
+            YAMATO HULL INTEGRITY
         </div>
     </div>
 
@@ -44,23 +98,17 @@
         import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
         let scene, camera, renderer, yamato;
-        let score = 0;
-        let speed = 0;
         const keys = {};
-        const bullets = [];
-        const enemies = [];
-        
-        let camDist = 800; 
-        let camHeight = 200;
-
-        const MODEL_PATH = 'models/yamato.pmx'; 
+        let speed = 0;
+        let camDist = 1200;
+        let camHeight = 400;
 
         init();
         animate();
 
         function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 2000000);
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -68,90 +116,61 @@
             document.body.appendChild(renderer.domElement);
 
             scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+            const sun = new THREE.DirectionalLight(0xffffff, 1.0);
             sun.position.set(500, 1000, 500);
             scene.add(sun);
 
             createStars();
-            spawnEnemies(); // 敵の生成
 
-            // テクスチャURL修正マネージャー
+            // MMD読み込みとURL修正
             const manager = new THREE.LoadingManager();
-            manager.setURLModifier((url) => {
-                return url.includes('+') ? url.replace(/\+/g, '%2B') : url;
-            });
-
+            manager.setURLModifier(url => url.replace(/\+/g, '%2B'));
             const loader = new MMDLoader(manager);
             loader.setResourcePath('models/'); 
 
-            loader.load(MODEL_PATH, (mesh) => {
+            loader.load('models/yamato.pmx', (mesh) => {
                 yamato = mesh;
                 scene.add(yamato);
                 document.getElementById('loading').style.display = 'none';
-            }, 
-            (xhr) => {
-                const percent = Math.round(xhr.loaded / xhr.total * 100);
-                document.getElementById('progress').innerText = percent + "%";
+            }, (xhr) => {
+                document.getElementById('progress').innerText = Math.round(xhr.loaded / xhr.total * 100) + "%";
             });
 
-            window.addEventListener('keydown', (e) => {
-                keys[e.code] = true;
-                // Fキーで発射
-                if (e.code === 'KeyF') shoot();
-            });
-            window.addEventListener('keyup', (e) => keys[e.code] = false);
+            // --- 入力イベント (PC & スマホ) ---
+            window.addEventListener('keydown', e => keys[e.code] = true);
+            window.addEventListener('keyup', e => keys[e.code] = false);
+            
+            // スマホボタンの設定
+            setupButton('btn-up', 'ArrowUp');
+            setupButton('btn-down', 'ArrowDown');
+            setupButton('btn-left', 'ArrowLeft');
+            setupButton('btn-right', 'ArrowRight');
+            setupButton('btn-boost', 'Space');
+            setupButton('btn-fire', 'KeyF');
+
             window.addEventListener('resize', onWindowResize);
         }
 
-        // 星空
+        function setupButton(id, keyName) {
+            const btn = document.getElementById(id);
+            const start = (e) => { e.preventDefault(); keys[keyName] = true; };
+            const end = (e) => { e.preventDefault(); keys[keyName] = false; };
+            btn.addEventListener('touchstart', start);
+            btn.addEventListener('touchend', end);
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', end);
+        }
+
         function createStars() {
             const vertices = [];
-            for (let i = 0; i < 20000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(100000));
-                vertices.push(THREE.MathUtils.randFloatSpread(100000));
-                vertices.push(THREE.MathUtils.randFloatSpread(100000));
+            for (let i = 0; i < 10000; i++) {
+                vertices.push(THREE.MathUtils.randFloatSpread(50000));
+                vertices.push(THREE.MathUtils.randFloatSpread(50000));
+                vertices.push(THREE.MathUtils.randFloatSpread(50000));
             }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 5 })));
-        }
-
-        // 敵の生成（赤い球体）
-        function spawnEnemies() {
-            const enemyGeo = new THREE.SphereGeometry(100, 16, 16);
-            const enemyMat = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x330000 });
-            
-            for (let i = 0; i < 50; i++) {
-                const enemy = new THREE.Mesh(enemyGeo, enemyMat);
-                enemy.position.set(
-                    THREE.MathUtils.randFloatSpread(20000),
-                    THREE.MathUtils.randFloatSpread(10000),
-                    THREE.MathUtils.randFloatSpread(20000)
-                );
-                scene.add(enemy);
-                enemies.push(enemy);
-            }
-        }
-
-        // 主砲発射処理
-        function shoot() {
-            if (!yamato) return;
-            // ショックカノンの光線（細長いシリンダー）
-            const laserGeo = new THREE.CylinderGeometry(5, 5, 500, 8);
-            const laserMat = new THREE.MeshBasicMaterial({ color: 0x00ffff }); // 青白い光
-            const laser = new THREE.Mesh(laserGeo, laserMat);
-            
-            // ヤマトの艦首の向きに合わせる
-            laser.quaternion.copy(yamato.quaternion);
-            laser.rotation.x += Math.PI / 2; // 向きの調整
-            
-            // 発射位置をヤマトの少し前に設定
-            laser.position.copy(yamato.position);
-            const offset = new THREE.Vector3(0, 50, -300).applyQuaternion(yamato.quaternion);
-            laser.position.add(offset);
-            
-            scene.add(laser);
-            bullets.push({ mesh: laser, velocity: new THREE.Vector3(0, 0, -50).applyQuaternion(yamato.quaternion) });
+            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 4 })));
         }
 
         function onWindowResize() {
@@ -164,63 +183,25 @@
             requestAnimationFrame(animate);
 
             if (yamato) {
-                // 移動・旋回
-                if (keys['Space']) speed += 0.5;
-                if (keys['ShiftLeft']) speed -= 0.5;
+                // 速度
+                if (keys['Space']) speed += 0.4;
                 speed *= 0.96; 
                 yamato.translateZ(-speed);
 
-                const rotS = 0.02;
-                if (keys['ArrowLeft']) yamato.rotation.y += rotS;
-                if (keys['ArrowRight']) yamato.rotation.y -= rotS;
-                if (keys['ArrowUp']) yamato.rotation.x -= rotS * 0.5;
-                if (keys['ArrowDown']) yamato.rotation.x += rotS * 0.5;
+                // 回転
+                if (keys['ArrowLeft']) yamato.rotation.y += 0.02;
+                if (keys['ArrowRight']) yamato.rotation.y -= 0.02;
+                if (keys['ArrowUp']) yamato.rotation.x -= 0.01;
+                if (keys['ArrowDown']) yamato.rotation.x += 0.01;
                 
-                if (keys['KeyA']) yamato.translateX(10);
-                if (keys['KeyD']) yamato.translateX(-10);
-                if (keys['KeyW']) yamato.translateY(10);
-                if (keys['KeyS']) yamato.translateY(-10);
-
-                // ズーム(Q/E)
-                if (keys['KeyQ']) { camDist -= 20; camHeight -= 5; }
-                if (keys['KeyE']) { camDist += 20; camHeight += 5; }
-                camDist = Math.max(150, camDist);
-
                 // カメラ追従
                 const relativeOffset = new THREE.Vector3(0, camHeight, camDist);
                 const cameraOffset = relativeOffset.applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(cameraOffset, 0.1);
-                camera.lookAt(new THREE.Vector3().copy(yamato.position).add(new THREE.Vector3(0, 50, -500).applyQuaternion(yamato.quaternion)));
+                camera.lookAt(yamato.position);
 
-                // UI更新
-                document.getElementById('score').innerText = score;
-                document.getElementById('speed-disp').innerText = Math.round(speed * 10);
-
-                // レーザーの移動と当たり判定
-                for (let i = bullets.length - 1; i >= 0; i--) {
-                    const b = bullets[i];
-                    b.mesh.position.add(b.velocity);
-                    
-                    // 敵との当たり判定
-                    for (let j = enemies.length - 1; j >= 0; j--) {
-                        const e = enemies[j];
-                        if (b.mesh.position.distanceTo(e.position) < 200) {
-                            // 命中！
-                            scene.remove(e);
-                            enemies.splice(j, 1);
-                            scene.remove(b.mesh);
-                            bullets.splice(i, 1);
-                            score += 100;
-                            break;
-                        }
-                    }
-
-                    // 遠くに行き過ぎた弾を消す
-                    if (b.mesh && b.mesh.position.distanceTo(yamato.position) > 20000) {
-                        scene.remove(b.mesh);
-                        bullets.splice(i, 1);
-                    }
-                }
+                // UIの更新
+                document.getElementById('speed-val').innerText = Math.round(speed * 10);
             }
 
             renderer.render(scene, camera);

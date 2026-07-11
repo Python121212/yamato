@@ -43,7 +43,7 @@
 
             // --- 【ここを調整：カメラの見える範囲】 ---
             // 最後の 100000 は「どこまで遠くが見えるか」。ヤマトが巨大なら大きくする
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 100000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);

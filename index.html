@@ -3,67 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Yamato Space Warfare</title>
+    <title>Yamato Space Warfare - Combat Version</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
         canvas { display: block; }
 
-        /* ゲームUI全体のレイアウト */
-        #ui-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; /* 下の3Dを触れるようにする */
-            color: #00ffea;
-        }
+        /* UI全体 */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; color: #00ffea; text-shadow: 0 0 5px #000; }
         .touch-btn {
-            pointer-events: auto; /* ボタンは触れるようにする */
-            background: rgba(0, 255, 234, 0.1);
-            border: 2px solid #00ffea;
-            border-radius: 50%;
+            pointer-events: auto; background: rgba(0, 255, 234, 0.1);
+            border: 2px solid #00ffea; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             user-select: none; -webkit-tap-highlight-color: transparent;
         }
         .touch-btn:active { background: rgba(0, 255, 234, 0.4); }
 
-        /* レーダー (左上) */
-        #radar {
-            position: absolute; top: 20px; left: 20px; width: 100px; height: 100px;
-            border-radius: 50%; border: 1px solid #00ffea; background: rgba(0, 50, 50, 0.5);
-        }
+        /* 左上：視点・レーダー */
+        #top-left { position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 10px; }
+        #btn-view { width: 70px; height: 70px; border-radius: 10px; font-size: 12px; text-align: center; }
 
-        /* 十字キー (左下) */
-        #d-pad {
-            position: absolute; bottom: 40px; left: 40px; width: 150px; height: 150px;
-        }
-        #btn-up    { position: absolute; top: 0; left: 50px; width: 50px; height: 50px; }
-        #btn-down  { position: absolute; bottom: 0; left: 50px; width: 50px; height: 50px; }
-        #btn-left  { position: absolute; left: 0; top: 50px; width: 50px; height: 50px; }
+        /* 左下：移動 */
+        #d-pad { position: absolute; bottom: 40px; left: 40px; width: 150px; height: 150px; }
+        #btn-up { position: absolute; top: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-down { position: absolute; bottom: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-left { position: absolute; left: 0; top: 50px; width: 50px; height: 50px; }
         #btn-right { position: absolute; right: 0; top: 50px; width: 50px; height: 50px; }
 
-        /* 攻撃ボタン・速度 (右下) */
-        #actions {
-            position: absolute; bottom: 40px; right: 40px; display: flex; flex-direction: column; gap: 20px;
-        }
-        #btn-fire { width: 80px; height: 80px; font-weight: bold; font-size: 14px; border-color: #ff3c00; color: #ff3c00; }
-        #btn-boost { width: 60px; height: 60px; font-size: 12px; }
+        /* 右下：攻撃・加速 */
+        #actions { position: absolute; bottom: 40px; right: 40px; display: flex; flex-direction: column; gap: 20px; align-items: flex-end; }
+        #btn-fire { width: 90px; height: 90px; border-color: #00ccff; color: #00ccff; font-weight: bold; background: rgba(0, 204, 255, 0.2); }
+        #btn-boost { width: 70px; height: 70px; }
 
-        /* 体力・速度ゲージ (中央下) */
-        #status-bar {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            width: 250px; text-align: center; pointer-events: none;
-        }
-        #hp-bar { width: 100%; height: 10px; background: #333; border: 1px solid #00ffea; }
+        /* ステータス */
+        #status { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); text-align: center; }
+        #hp-bar { width: 200px; height: 8px; background: #222; border: 1px solid #00ffea; margin-top: 5px; }
         #hp-fill { width: 100%; height: 100%; background: #00ffea; }
-        
+
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; }
     </style>
 </head>
 <body>
 
-    <div id="loading">SYSTEM LOADING... <span id="progress">0%</span></div>
+    <div id="loading">波動エンジン始動中... <span id="progress">0%</span></div>
 
-    <!-- UI レイヤー -->
     <div id="ui-layer">
-        <div id="radar"></div>
+        <div id="top-left">
+            <div id="btn-view" class="touch-btn">視点切替<br>(V)</div>
+        </div>
         
         <div id="d-pad">
             <div id="btn-up" class="touch-btn">▲</div>
@@ -73,14 +59,13 @@
         </div>
 
         <div id="actions">
-            <div id="btn-fire" class="touch-btn">主砲発射</div>
+            <div id="btn-fire" class="touch-btn">ショック<br>カノン(F)</div>
             <div id="btn-boost" class="touch-btn">加速</div>
         </div>
 
-        <div id="status-bar">
-            SPEED: <span id="speed-val">0</span>km/h
+        <div id="status">
+            <span id="speed-text">0</span> cosmo/h
             <div id="hp-bar"><div id="hp-fill"></div></div>
-            YAMATO HULL INTEGRITY
         </div>
     </div>
 
@@ -98,17 +83,24 @@
         import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
         let scene, camera, renderer, yamato;
-        const keys = {};
         let speed = 0;
-        let camDist = 1200;
-        let camHeight = 400;
+        const keys = {};
+        const bullets = []; // 弾を管理する配列
+        
+        // 視点管理
+        let viewMode = 0; // 0:後方, 1:真上, 2:艦橋
+        const cameraSettings = [
+            { pos: new THREE.Vector3(0, 150, 600), look: 100 },  // 後方
+            { pos: new THREE.Vector3(0, 1000, 100), look: 0 },   // 真上
+            { pos: new THREE.Vector3(0, 80, -50), look: -500 }   // 艦橋風
+        ];
 
         init();
         animate();
 
         function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000000);
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 500000);
             
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -122,7 +114,6 @@
 
             createStars();
 
-            // MMD読み込みとURL修正
             const manager = new THREE.LoadingManager();
             manager.setURLModifier(url => url.replace(/\+/g, '%2B'));
             const loader = new MMDLoader(manager);
@@ -136,41 +127,73 @@
                 document.getElementById('progress').innerText = Math.round(xhr.loaded / xhr.total * 100) + "%";
             });
 
-            // --- 入力イベント (PC & スマホ) ---
-            window.addEventListener('keydown', e => keys[e.code] = true);
+            // キー入力
+            window.addEventListener('keydown', e => {
+                keys[e.code] = true;
+                if(e.code === 'KeyV') switchView();
+                if(e.code === 'KeyF') fireCannon();
+            });
             window.addEventListener('keyup', e => keys[e.code] = false);
             
-            // スマホボタンの設定
-            setupButton('btn-up', 'ArrowUp');
-            setupButton('btn-down', 'ArrowDown');
-            setupButton('btn-left', 'ArrowLeft');
-            setupButton('btn-right', 'ArrowRight');
+            // ボタン設定
+            setupButton('btn-up', 'ArrowUp'); setupButton('btn-down', 'ArrowDown');
+            setupButton('btn-left', 'ArrowLeft'); setupButton('btn-right', 'ArrowRight');
             setupButton('btn-boost', 'Space');
-            setupButton('btn-fire', 'KeyF');
+            
+            document.getElementById('btn-view').addEventListener('mousedown', switchView);
+            document.getElementById('btn-view').addEventListener('touchstart', (e) => { e.preventDefault(); switchView(); });
+            document.getElementById('btn-fire').addEventListener('mousedown', fireCannon);
+            document.getElementById('btn-fire').addEventListener('touchstart', (e) => { e.preventDefault(); fireCannon(); });
 
             window.addEventListener('resize', onWindowResize);
         }
 
         function setupButton(id, keyName) {
             const btn = document.getElementById(id);
-            const start = (e) => { e.preventDefault(); keys[keyName] = true; };
-            const end = (e) => { e.preventDefault(); keys[keyName] = false; };
-            btn.addEventListener('touchstart', start);
-            btn.addEventListener('touchend', end);
-            btn.addEventListener('mousedown', start);
-            btn.addEventListener('mouseup', end);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+            btn.addEventListener('mousedown', () => keys[keyName] = true);
+            btn.addEventListener('mouseup', () => keys[keyName] = false);
+        }
+
+        // 視点切り替え
+        function switchView() {
+            viewMode = (viewMode + 1) % cameraSettings.length;
+        }
+
+        // ショックカノン発射
+        function fireCannon() {
+            if (!yamato) return;
+            
+            // 弾の形状と色
+            const geo = new THREE.CylinderGeometry(2, 2, 40, 8);
+            geo.rotateX(Math.PI / 2); // 向きを前方に倒す
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            
+            const bullet = new THREE.Mesh(geo, mat);
+            
+            // ヤマトの現在の位置と向きをコピー
+            bullet.position.copy(yamato.position);
+            bullet.rotation.copy(yamato.rotation);
+            
+            // 少し前方にオフセットして出現させる
+            bullet.translateZ(-150);
+            
+            bullet.userData.life = 100; // 100フレームで消える
+            bullets.push(bullet);
+            scene.add(bullet);
         }
 
         function createStars() {
             const vertices = [];
             for (let i = 0; i < 10000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(50000));
-                vertices.push(THREE.MathUtils.randFloatSpread(50000));
-                vertices.push(THREE.MathUtils.randFloatSpread(50000));
+                vertices.push(THREE.MathUtils.randFloatSpread(60000));
+                vertices.push(THREE.MathUtils.randFloatSpread(60000));
+                vertices.push(THREE.MathUtils.randFloatSpread(60000));
             }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 4 })));
+            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 5 })));
         }
 
         function onWindowResize() {
@@ -183,25 +206,37 @@
             requestAnimationFrame(animate);
 
             if (yamato) {
-                // 速度
-                if (keys['Space']) speed += 0.4;
+                // 移動・旋回
+                if (keys['Space']) speed += 0.5;
                 speed *= 0.96; 
                 yamato.translateZ(-speed);
 
-                // 回転
                 if (keys['ArrowLeft']) yamato.rotation.y += 0.02;
                 if (keys['ArrowRight']) yamato.rotation.y -= 0.02;
                 if (keys['ArrowUp']) yamato.rotation.x -= 0.01;
                 if (keys['ArrowDown']) yamato.rotation.x += 0.01;
                 
-                // カメラ追従
-                const relativeOffset = new THREE.Vector3(0, camHeight, camDist);
-                const cameraOffset = relativeOffset.applyMatrix4(yamato.matrixWorld);
+                // カメラの追従
+                const config = cameraSettings[viewMode];
+                const cameraOffset = config.pos.clone().applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(cameraOffset, 0.1);
-                camera.lookAt(yamato.position);
+                
+                // 注視点
+                const lookAtPos = new THREE.Vector3(0, 0, -config.look).applyMatrix4(yamato.matrixWorld);
+                camera.lookAt(lookAtPos);
 
-                // UIの更新
-                document.getElementById('speed-val').innerText = Math.round(speed * 10);
+                document.getElementById('speed-text').innerText = Math.round(speed * 20);
+            }
+
+            // 弾の移動と削除
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.translateZ(-30); // 弾のスピード
+                b.userData.life--;
+                if (b.userData.life <= 0) {
+                    scene.remove(b);
+                    bullets.splice(i, 1);
+                }
             }
 
             renderer.render(scene, camera);

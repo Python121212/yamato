@@ -76,7 +76,7 @@
     import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
     let scene, camera, renderer, yamato;
-    let speed = 0, camDist = 2500;
+    let speed = 0, camDist = 3000;
     const keys = {};
     const bullets = [];
     const targets = [];
@@ -86,9 +86,8 @@
     let activeIdx = -1;
     let ammoType = 0; 
 
-    // 各砲塔のステータス管理
     let turretAngles = [];
-    let reloadTimers = []; // 2秒（2000ms）のリロード時間
+    let reloadTimers = []; 
 
     function getTurretGroup(name) {
         const isSub = name.includes("副");
@@ -103,7 +102,7 @@
 
     function init() {
         scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000000);
+        camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 3000000);
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
@@ -130,11 +129,9 @@
             const btnContainer = document.getElementById('turret-selector');
             const sortedBases = [];
 
-            // 1. 土台ボーンの抽出
             yamato.skeleton.bones.forEach((bone) => {
                 const n = bone.name;
                 if (n.includes("砲") || n.includes("塔") || n.includes("Turret")) {
-                    // 土台を特定（身、先、穴、右、左、中、各アルファベットなどを除外）
                     if (!n.includes("身") && !n.includes("先") && !n.includes("穴") && !n.includes("+") && 
                         !n.includes("右") && !n.includes("左") && !n.includes("中") && !/[A-C]$/.test(n) && !/=[A-Z]/i.test(n)) {
                         const group = getTurretGroup(n);
@@ -156,11 +153,9 @@
                 return a.group.num - b.group.num;
             });
 
-            // 2. 砲身パーツ（真ん中の砲身を含むすべて）の自動再連結
             sortedBases.forEach((data) => {
                 yamato.skeleton.bones.forEach(b => {
                     const bGroup = getTurretGroup(b.name);
-                    // 同一の主砲/副砲グループに属し、末尾パーツ（身、先、右/左/中、A/B/Cなど）を広く網羅
                     if (bGroup && bGroup.type === data.group.type && bGroup.num === data.group.num) {
                         if (b.name.includes("身") || b.name.includes("先") || b.name.includes("右") || b.name.includes("左") || b.name.includes("中") || /[A-C]$/.test(b.name)) {
                             if (b !== data.base && !data.barrels.includes(b)) {
@@ -173,7 +168,7 @@
                 const idx = turrets.length;
                 turrets.push(data);
                 turretAngles.push({ yaw: 0, pitch: 0 });
-                reloadTimers.push(0); // リロードタイマー初期化
+                reloadTimers.push(0); 
 
                 const btn = document.createElement('button');
                 btn.className = 'ui-btn';
@@ -195,7 +190,7 @@
                 turretAngles[activeIdx].pitch -= e.deltaY * 0.002;
                 turretAngles[activeIdx].pitch = Math.max(-0.05, Math.min(0.7, turretAngles[activeIdx].pitch));
             } else {
-                camDist = Math.max(500, Math.min(10000, camDist + e.deltaY * 2));
+                camDist = Math.max(800, Math.min(15000, camDist + e.deltaY * 3));
             }
         }, { passive: true });
 
@@ -262,12 +257,10 @@
     function fire() {
         if (!yamato) return;
         
-        // 自由視点（-1）のときは全砲塔、個別指定時はその砲塔をチェック
         if (activeIdx !== -1) {
-            if (reloadTimers[activeIdx] > 0) return; // リロード中なら撃てない
-            reloadTimers[activeIdx] = 120; // 60fps換算で120フレーム＝2秒
+            if (reloadTimers[activeIdx] > 0) return; 
+            reloadTimers[activeIdx] = 120; 
         } else {
-            // 一斉射撃モード（自由視点時）
             let firedAny = false;
             turrets.forEach((t, idx) => {
                 if (reloadTimers[idx] <= 0) {
@@ -288,14 +281,14 @@
         const shootPoints = t.barrels.length > 0 ? t.barrels : [t.base];
         shootPoints.forEach(p => {
             const isShock = (ammoType === 0);
-            // ショックカノンのサイズを大型化（太さ12, 長さ380）
-            const geo = isShock ? new THREE.CylinderGeometry(12, 12, 380, 8) : new THREE.SphereGeometry(25, 8, 8);
+            // ショックカノンのサイズを極大化（太さ40、長さ800へさらにアップ）
+            const geo = isShock ? new THREE.CylinderGeometry(40, 40, 800, 12) : new THREE.SphereGeometry(60, 12, 12);
             if(isShock) geo.rotateX(Math.PI/2);
             
             const mat = new THREE.MeshBasicMaterial({
                 color: isShock ? 0x00ffff : 0xffaa00,
                 transparent: true,
-                opacity: 0.9
+                opacity: 0.95
             });
             
             const bullet = new THREE.Mesh(geo, mat);
@@ -311,8 +304,8 @@
             const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat).normalize();
             
             bullet.userData = { 
-                life: 120, 
-                vel: dir.multiplyScalar(isShock ? 380 : 180), 
+                life: 150, 
+                vel: dir.multiplyScalar(isShock ? 420 : 200), 
                 type: ammoType 
             };
             bullets.push(bullet);
@@ -321,15 +314,15 @@
     }
 
     function spawnTargets(count) {
-        const geo = new THREE.IcosahedronGeometry(60, 1);
+        const geo = new THREE.IcosahedronGeometry(120, 1);
         const mat = new THREE.MeshStandardMaterial({ color: 0xff3344, roughness: 0.8, metalness: 0.2 });
         
         for (let i = 0; i < count; i++) {
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.set(
-                THREE.MathUtils.randFloatSpread(30000),
-                THREE.MathUtils.randFloatSpread(10000),
-                THREE.MathUtils.randFloatSpread(30000) + 15000 
+                THREE.MathUtils.randFloatSpread(40000),
+                THREE.MathUtils.randFloatSpread(15000),
+                THREE.MathUtils.randFloatSpread(40000) + 20000 
             );
             scene.add(mesh);
             targets.push(mesh);
@@ -338,7 +331,7 @@
     }
 
     function createExplosion(pos, colorHex) {
-        const pCount = 30;
+        const pCount = 50;
         const geom = new THREE.BufferGeometry();
         const positions = [];
         const velocities = [];
@@ -346,24 +339,24 @@
         for(let i=0; i<pCount; i++) {
             positions.push(pos.x, pos.y, pos.z);
             velocities.push(
-                THREE.MathUtils.randFloatSpread(40),
-                THREE.MathUtils.randFloatSpread(40),
-                THREE.MathUtils.randFloatSpread(40)
+                THREE.MathUtils.randFloatSpread(60),
+                THREE.MathUtils.randFloatSpread(60),
+                THREE.MathUtils.randFloatSpread(60)
             );
         }
 
         geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        const mat = new THREE.PointsMaterial({color: colorHex, size: 25, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending});
+        const mat = new THREE.PointsMaterial({color: colorHex, size: 40, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending});
         const pSystem = new THREE.Points(geom, mat);
         
-        pSystem.userData = { velocities: velocities, life: 30 };
+        pSystem.userData = { velocities: velocities, life: 35 };
         particles.push(pSystem);
         scene.add(pSystem);
     }
 
     function createStars() {
         const v = [];
-        for(let i=0; i<15000; i++) v.push(THREE.MathUtils.randFloatSpread(300000),THREE.MathUtils.randFloatSpread(300000),THREE.MathUtils.randFloatSpread(300000));
+        for(let i=0; i<15000; i++) v.push(THREE.MathUtils.randFloatSpread(500000),THREE.MathUtils.randFloatSpread(500000),THREE.MathUtils.randFloatSpread(500000));
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
         scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xffffff, size:15})));
@@ -378,7 +371,6 @@
     function animate() {
         requestAnimationFrame(animate);
         
-        // リロードタイマーの更新とUIへの反映
         if (activeIdx !== -1) {
             if (reloadTimers[activeIdx] > 0) {
                 reloadTimers[activeIdx]--;
@@ -394,7 +386,6 @@
             document.getElementById('reload-val').style.color = "#00ffea";
         }
 
-        // 全砲塔のタイマーを一律減少させる（バックグラウンド処理用）
         for(let i=0; i<reloadTimers.length; i++) {
             if(reloadTimers[i] > 0 && i !== activeIdx) reloadTimers[i]--;
         }
@@ -409,7 +400,6 @@
             if (keys['KeyD']) yamato.rotation.y -= 0.012;
             document.getElementById('speed-val').innerText = Math.round(speed * 10);
 
-            // 角度の同期（3本すべての砲身が動くよう処理）
             turrets.forEach((t, idx) => {
                 t.base.rotation.y = THREE.MathUtils.lerp(t.base.rotation.y, turretAngles[idx].yaw, 0.1);
                 t.barrels.forEach(b => {
@@ -418,9 +408,14 @@
             });
 
             if (activeIdx === -1) {
-                const offset = new THREE.Vector3(0, 600, -camDist).applyMatrix4(yamato.matrixWorld);
-                camera.position.lerp(offset, 0.08);
-                camera.lookAt(yamato.position.clone().add(new THREE.Vector3(0, 100, 500).applyQuaternion(yamato.quaternion)));
+                // 画像を参考に、船体を斜め後ろからダイナミックに見下ろすクォータービューへ変更
+                // Xに横オフセットを足すことで、船の「真横〜斜め後ろ」の視点を作ります
+                const offset = new THREE.Vector3(camDist * 0.7, camDist * 0.4, -camDist * 0.8).applyMatrix4(yamato.matrixWorld);
+                camera.position.lerp(offset, 0.06);
+                
+                // カメラの視点は大和の少し前方に固定して、走っている臨場感をアップ
+                const targetLook = yamato.position.clone().add(new THREE.Vector3(0, 50, 400).applyQuaternion(yamato.quaternion));
+                camera.lookAt(targetLook);
             } else {
                 const base = turrets[activeIdx].base;
                 const offset = new THREE.Vector3(0, 120, -450).applyMatrix4(base.matrixWorld);
@@ -441,7 +436,7 @@
             for(let j = targets.length - 1; j >= 0; j--) {
                 const t = targets[j];
                 const dist = b.position.distanceTo(t.position);
-                if(dist < 150) { 
+                if(dist < 250) { 
                     createExplosion(t.position, b.userData.type === 0 ? 0x00ffff : 0xffaa00);
                     scene.remove(t);
                     targets.splice(j, 1);
@@ -468,7 +463,7 @@
                 posAttr.setZ(j, posAttr.getZ(j) + v[j*3+2]);
             }
             posAttr.needsUpdate = true;
-            p.material.opacity = p.userData.life / 30;
+            p.material.opacity = p.userData.life / 35;
 
             if(--p.userData.life <= 0) {
                 scene.remove(p);

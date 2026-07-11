@@ -58,7 +58,7 @@
     <div id="reticle"></div>
 
     <div id="bottom">
-        [W/S] 前進/後進 | [A/D] 旋回 | 航行時[横スクロール] 視点変更 | 砲塔選択時[縦横スクロール] 照準操作 | [F] 砲撃 | [X] 兵装切替
+        [W/S] 前進/後進 | [A/D] 旋回 | [縦スクロール] 砲身上下 / ズーム | [横スクロール] 砲塔旋回 / 視点回転 | [F] 砲撃 | [X] 兵装切替
     </div>
 </div>
 
@@ -76,7 +76,8 @@
     import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
     let scene, camera, renderer, yamato;
-    let speed = 0, camDist = 3000, camYaw = 0.5; // camYawで自由視点時の横スクロール回転を管理
+    let speed = 0, camDist = 3000;
+    let camYaw = 0.4; // 自由視点時の初期横角度（少し斜め後ろ）
     const keys = {};
     const bullets = [];
     const targets = [];
@@ -129,6 +130,7 @@
             const btnContainer = document.getElementById('turret-selector');
             const sortedBases = [];
 
+            // 1. 主要5門の土台ボーン選定
             yamato.skeleton.bones.forEach((bone) => {
                 const n = bone.name;
                 if (n.includes("砲") || n.includes("塔") || n.includes("Turret")) {
@@ -141,7 +143,8 @@
                                 rawName: n,
                                 group: group,
                                 base: bone,
-                                barrels: []
+                                barrels: [],
+                                muzzlePoints: [] // 砲先・発射点ボーンの格納用
                             });
                         }
                     }
@@ -153,17 +156,30 @@
                 return a.group.num - b.group.num;
             });
 
+            // 2. 砲身パーツおよび「先端（発射点）」の厳密なマッピング
             sortedBases.forEach((data) => {
                 yamato.skeleton.bones.forEach(b => {
                     const bGroup = getTurretGroup(b.name);
                     if (bGroup && bGroup.type === data.group.type && bGroup.num === data.group.num) {
-                        if (b.name.includes("身") || b.name.includes("先") || b.name.includes("右") || b.name.includes("左") || b.name.includes("中") || /[A-C]$/.test(b.name)) {
+                        // 稼働ボーン（身、右、左、中、A/B/C）を登録
+                        if (b.name.includes("身") || b.name.includes("右") || b.name.includes("左") || b.name.includes("中") || /[A-C]$/.test(b.name)) {
                             if (b !== data.base && !data.barrels.includes(b)) {
                                 data.barrels.push(b);
                             }
                         }
+                        // 発射点として、最も先端にあるボーン（先、穴、または身の先端など）を優先登録
+                        if (b.name.includes("先") || b.name.includes("穴")) {
+                            if (!data.muzzlePoints.includes(b)) {
+                                data.muzzlePoints.push(b);
+                            }
+                        }
                     }
                 });
+
+                // 万が一「先」ボーンが分かれていない場合は、砲身自体を発射点にする
+                if (data.muzzlePoints.length === 0) {
+                    data.muzzlePoints = data.barrels;
+                }
 
                 const idx = turrets.length;
                 turrets.push(data);
@@ -184,15 +200,16 @@
             createDummyShip();
         });
 
+        // スクロール操作の拡張
         window.addEventListener('wheel', (e) => {
             if (activeIdx !== -1 && turrets[activeIdx]) {
-                // 砲塔操作時: 横で旋回、縦で上下
+                // 砲塔選択時：横で旋回、縦で上下
                 turretAngles[activeIdx].yaw -= e.deltaX * 0.002;
                 turretAngles[activeIdx].pitch -= e.deltaY * 0.002;
                 turretAngles[activeIdx].pitch = Math.max(-0.05, Math.min(0.7, turretAngles[activeIdx].pitch));
             } else {
-                // 自由航行時: 横スクロール（deltaX）でカメラ旋回、縦スクロール（deltaY）でズーム
-                camYaw -= e.deltaX * 0.0015;
+                // 自由航行モード時：横スクロールで視点をぐるぐる回転、縦スクロールでズーム
+                camYaw += e.deltaX * 0.002;
                 camDist = Math.max(800, Math.min(15000, camDist + e.deltaY * 3));
             }
         }, { passive: true });
@@ -232,7 +249,8 @@
             mockBarrel.rotateX(Math.PI/2);
             mockTurret.add(mockBarrel);
 
-            turrets.push({ base: mockTurret, barrels: [mockBarrel] });
+            // ダミー時はバレルを発射点に兼任
+            turrets.push({ base: mockTurret, barrels: [mockBarrel], muzzlePoints: [mockBarrel] });
             turretAngles.push({ yaw: 0, pitch: 0 });
             reloadTimers.push(0);
 
@@ -281,7 +299,9 @@
     }
 
     function fireSingleTurret(t) {
-        const shootPoints = t.barrels.length > 0 ? t.barrels : [t.base];
+        // 土台ではなく、割り出された正確な「砲先（muzzlePoints）」から弾を出す
+        const shootPoints = t.muzzlePoints.length > 0 ? t.muzzlePoints : (t.barrels.length > 0 ? t.barrels : [t.base]);
+        
         shootPoints.forEach(p => {
             const isShock = (ammoType === 0);
             const geo = isShock ? new THREE.CylinderGeometry(40, 40, 800, 12) : new THREE.SphereGeometry(60, 12, 12);
@@ -300,13 +320,12 @@
             p.getWorldPosition(worldPos);
             p.getWorldQuaternion(worldQuat);
             
-            // 砲身ボーンの向き（Z軸方向）のベクトルを正確に算出
-            const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat).normalize();
-            
-            // 【修正点】砲塔の先端からまっすぐ発射されるよう、弾体の初期位置を前方にずらす
-            const barrelLengthOffset = 180; // 砲身パーツの長さに合わせて先端へオフセット
-            bullet.position.copy(worldPos).addScaledVector(dir, barrelLengthOffset);
+            bullet.position.copy(worldPos);
             bullet.quaternion.copy(worldQuat);
+            
+            // ローカルの前方ベクトル(0,0,1)をワールド回転系に適用し、「今パーツが物理的に向いている正面」を完璧に計算
+            // これにより、デフォルトの向きが逆な第三主砲でも正確に後ろへ（向いている方へ）真っ直ぐ飛びます
+            const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat).normalize();
             
             bullet.userData = { 
                 life: 150, 
@@ -405,6 +424,7 @@
             if (keys['KeyD']) yamato.rotation.y -= 0.012;
             document.getElementById('speed-val').innerText = Math.round(speed * 10);
 
+            // 角度の同期
             turrets.forEach((t, idx) => {
                 t.base.rotation.y = THREE.MathUtils.lerp(t.base.rotation.y, turretAngles[idx].yaw, 0.1);
                 t.barrels.forEach(b => {
@@ -413,14 +433,14 @@
             });
 
             if (activeIdx === -1) {
-                // 【修正点】camYawを使って横スクロールによるカメラ旋回角度を動的に反映
-                const offsetX = Math.sin(camYaw) * camDist * 0.8;
-                const offsetZ = -Math.cos(camYaw) * camDist * 0.8;
+                // 横スクロール（camYaw）によって、大和の周囲を360度シームレスに回り込めるよう計算を変更
+                const posX = Math.sin(camYaw) * camDist;
+                const posZ = -Math.cos(camYaw) * camDist;
                 
-                const offset = new THREE.Vector3(offsetX, camDist * 0.4, offsetZ).applyMatrix4(yamato.matrixWorld);
+                const offset = new THREE.Vector3(posX, camDist * 0.4, posZ).applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(offset, 0.06);
                 
-                const targetLook = yamato.position.clone().add(new THREE.Vector3(0, 50, 400).applyQuaternion(yamato.quaternion));
+                const targetLook = yamato.position.clone().add(new THREE.Vector3(0, 50, 200).applyQuaternion(yamato.quaternion));
                 camera.lookAt(targetLook);
             } else {
                 const base = turrets[activeIdx].base;

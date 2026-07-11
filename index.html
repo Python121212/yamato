@@ -85,10 +85,17 @@
     let activeIdx = -1;
     let ammoType = 0; 
 
-    // 指定された5つの主要砲塔ボーン名（完全一致用）
-    const targetTurretNames = ["第一主砲", "第二主砲", "第三主砲", "第一副砲", "第二副砲"];
-    // 各砲塔の現在の目標角度管理
+    // 各砲塔の角度データ管理
     let turretAngles = [];
+
+    // ボーン名から「何番目の主砲/副砲か」を判定するヘルパー関数
+    function getTurretGroup(name) {
+        const isSub = name.includes("副");
+        if (name.includes("1") || name.includes("１") || name.includes("一")) return { num: 1, type: isSub ? "sub" : "main", label: isSub ? "第一副砲" : "第一主砲" };
+        if (name.includes("2") || name.includes("２") || name.includes("二")) return { num: 2, type: isSub ? "sub" : "main", label: isSub ? "第二副砲" : "第二主砲" };
+        if (name.includes("3") || name.includes("３") || name.includes("三")) return { num: 3, type: isSub ? "sub" : "main", label: isSub ? "第三副砲" : "第三主砲" };
+        return null;
+    }
 
     init();
     animate();
@@ -116,37 +123,62 @@
         loader.load('models/yamato.pmx', (mesh) => {
             yamato = mesh;
             yamato.scale.set(25, 25, 25); 
-            // 前後逆を修正するためにモデル自体の向きを180度回転
+            // モデルの前後逆を修正
             yamato.rotation.y = Math.PI;
             scene.add(yamato);
             
             const btnContainer = document.getElementById('turret-selector');
-            const foundBases = new Map();
+            const sortedBases = [];
 
-            // 1. 指定された5つの主要ボーンのみを抽出
+            // 1. 賢いボーンスキャン（パーツの枝葉を弾き、主要5基の土台だけを抽出）
             yamato.skeleton.bones.forEach((bone) => {
                 const n = bone.name;
-                if (targetTurretNames.includes(n)) {
-                    foundBases.set(n, { base: bone, barrels: [] });
+                // 砲塔の土台ボーンになり得るキーワードをチェック
+                if (n.includes("砲") || n.includes("塔") || n.includes("Turret")) {
+                    // 枝葉パーツ（身、先、穴、A,B,C,プラス記号など）を除外して土台を特定
+                    if (!n.includes("身") && !n.includes("先") && !n.includes("穴") && !n.includes("+") && !/=[A-Z]/i.test(n)) {
+                        const group = getTurretGroup(n);
+                        if (group) {
+                            // 3番目の副砲など、不要なものは除外（主要5門に絞る）
+                            if (group.type === "sub" && group.num > 2) return;
+
+                            sortedBases.push({
+                                rawName: n,
+                                group: group,
+                                base: bone,
+                                barrels: []
+                            });
+                        }
+                    }
                 }
             });
 
-            // 2. 抽出した主要ボーンに紐づく子パーツ（砲身など）を自動スキャン
-            foundBases.forEach((data, name) => {
+            // 表示順を「第一主砲、第二主砲、第三主砲、第一副砲、第二副砲」の順にソート
+            sortedBases.sort((a, b) => {
+                if (a.group.type !== b.group.type) return a.group.type === "main" ? -1 : 1;
+                return a.group.num - b.group.num;
+            });
+
+            // 2. 土台に紐づく砲身（上下パーツ）をグループ情報から再連結
+            sortedBases.forEach((data) => {
                 yamato.skeleton.bones.forEach(b => {
-                    // 例: 「第一主砲」という名前を含み、かつ「身」を含むボーンを子砲身とする
-                    if (b.name.includes(name) && b.name.includes("身")) {
-                        data.barrels.push(b);
+                    const bGroup = getTurretGroup(b.name);
+                    // 同じ番号・同じ種別（主砲/副砲）で、かつ「身」や「A/B/C」などの砲身パーツを収集
+                    if (bGroup && bGroup.type === data.group.type && bGroup.num === data.group.num) {
+                        if (b.name.includes("身") || b.name.includes("先") || /[A-C]$/.test(b.name)) {
+                            if (b !== data.base) data.barrels.push(b);
+                        }
                     }
                 });
-                
+
+                // データの登録とボタン生成
                 const idx = turrets.length;
                 turrets.push(data);
-                turretAngles.push({ yaw: 0, pitch: 0 }); // 角度管理用初期化
+                turretAngles.push({ yaw: 0, pitch: 0 });
 
                 const btn = document.createElement('button');
                 btn.className = 'ui-btn';
-                btn.innerText = name;
+                btn.innerText = data.group.label; // 「第一主砲」などの綺麗な名前
                 btn.onclick = () => selectTurret(idx, btn);
                 btnContainer.appendChild(btn);
             });
@@ -158,18 +190,17 @@
             createDummyShip();
         });
 
-        // スクロールイベント：縦で上下、横で左右旋回
+        // ホイールによる直感操作
         window.addEventListener('wheel', (e) => {
             if (activeIdx !== -1 && turrets[activeIdx]) {
                 // 横スクロール（deltaX）で砲塔左右旋回
                 turretAngles[activeIdx].yaw -= e.deltaX * 0.002;
                 
-                // 縦スクロール（deltaY）で砲身上下
+                // 縦スクロール（deltaY）で砲身上下（仰角・俯角）
                 turretAngles[activeIdx].pitch -= e.deltaY * 0.002;
-                // 砲身が極端に曲がりすぎないよう制限（俯角-5度〜仰角45度程度）
-                turretAngles[activeIdx].pitch = Math.max(-0.1, Math.min(0.8, turretAngles[activeIdx].pitch));
+                // 砲身が曲がりすぎないように制限
+                turretAngles[activeIdx].pitch = Math.max(-0.05, Math.min(0.7, turretAngles[activeIdx].pitch));
             } else {
-                // 自由視点時はズーム
                 camDist = Math.max(500, Math.min(10000, camDist + e.deltaY * 2));
             }
         }, { passive: true });
@@ -198,13 +229,14 @@
         yamato = new THREE.Mesh(geo, mat);
         scene.add(yamato);
         
-        targetTurretNames.forEach((name, idx) => {
+        const dummyNames = ["第一主砲", "第二主砲", "第三主砲", "第一副砲", "第二副砲"];
+        dummyNames.forEach((name, idx) => {
             const mockTurret = new THREE.Group();
             mockTurret.position.set(0, 30, 100 - idx * 50);
             yamato.add(mockTurret);
             
             const mockBarrel = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 60), new THREE.MeshBasicMaterial({color:0x00ffea}));
-            mockBarrel.position.set(0, 0, 30); // 前向きに変更
+            mockBarrel.position.set(0, 0, 30);
             mockBarrel.rotateX(Math.PI/2);
             mockTurret.add(mockBarrel);
 
@@ -259,7 +291,6 @@
                 bullet.position.copy(worldPos);
                 bullet.quaternion.copy(worldQuat);
                 
-                // 前方ベクトルを算出（モデル反転に伴いZ方向を+1に変更）
                 const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat).normalize();
                 
                 bullet.userData = { 
@@ -282,7 +313,7 @@
             mesh.position.set(
                 THREE.MathUtils.randFloatSpread(30000),
                 THREE.MathUtils.randFloatSpread(10000),
-                THREE.MathUtils.randFloatSpread(30000) + 15000 // 前方に配置
+                THREE.MathUtils.randFloatSpread(30000) + 15000 
             );
             scene.add(mesh);
             targets.push(mesh);
@@ -332,45 +363,37 @@
         requestAnimationFrame(animate);
         
         if (yamato) {
-            // 移動制御（反転修正版：Wで前進、Sで後進）
             if (keys['KeyW']) speed += 1.2;
             if (keys['KeyS']) speed -= 1.2;
             speed *= 0.97;
-            yamato.translateZ(speed); // 前進
+            yamato.translateZ(speed); 
             
             if (keys['KeyA']) yamato.rotation.y += 0.012;
             if (keys['KeyD']) yamato.rotation.y -= 0.012;
             document.getElementById('speed-val').innerText = Math.round(speed * 10);
 
-            // 全砲塔の角度をスムーズに同期
+            // 角度の同期
             turrets.forEach((t, idx) => {
-                // 砲塔本体の旋回（Y軸）
                 t.base.rotation.y = THREE.MathUtils.lerp(t.base.rotation.y, turretAngles[idx].yaw, 0.1);
-                // 砲身の上下（X軸）
                 t.barrels.forEach(b => {
                     b.rotation.x = THREE.MathUtils.lerp(b.rotation.x, turretAngles[idx].pitch, 0.1);
                 });
             });
 
-            // カメラ挙動（反転修正版）
             if (activeIdx === -1) {
-                // 船の後方から前方を見据える三人称カメラ
                 const offset = new THREE.Vector3(0, 600, -camDist).applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(offset, 0.08);
                 camera.lookAt(yamato.position.clone().add(new THREE.Vector3(0, 100, 500).applyQuaternion(yamato.quaternion)));
             } else {
-                // 選択中砲塔の視点
                 const base = turrets[activeIdx].base;
                 const offset = new THREE.Vector3(0, 120, -450).applyMatrix4(base.matrixWorld);
                 camera.position.lerp(offset, 0.15);
                 
-                // 砲塔の向いている向きにカメラターゲットを設定
                 const look = new THREE.Vector3(0, turretAngles[activeIdx].pitch * 1000, 3000).applyMatrix4(base.matrixWorld);
                 camera.lookAt(look);
             }
         }
 
-        // 弾道の更新 ＆ 当たり判定
         for(let i = bullets.length - 1; i >= 0; i--) {
             const b = bullets[i];
             b.position.add(b.userData.vel);
@@ -397,7 +420,6 @@
             }
         }
 
-        // 爆発エフェクトの更新
         for(let i = particles.length - 1; i >= 0; i--) {
             const p = particles[i];
             const posAttr = p.geometry.attributes.position;

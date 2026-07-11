@@ -3,37 +3,197 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js MMD Yamato Loader</title>
+    <title>Space Battleship Yamato - Three.js Web Game</title>
     <style>
         body {
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background-color: #000000; /* 宇宙の基本の黒 */
+            background-color: #020208;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
         }
-        #info {
+
+        /* 宇宙空間のHUD（UI）スタイル */
+        #ui-container {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-family: sans-serif;
-            font-size: 14px;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
+            box-sizing: border-box;
+            border: 2px solid rgba(0, 180, 255, 0.2);
+        }
+
+        .hud-panel {
+            position: absolute;
+            color: #00f0ff;
+            background: rgba(2, 6, 26, 0.75);
+            border: 1px solid #005588;
+            box-shadow: 0 0 15px rgba(0, 150, 255, 0.3);
+            padding: 15px;
+            border-radius: 4px;
+            pointer-events: auto;
+        }
+
+        #info-panel {
+            top: 20px;
+            left: 20px;
+            width: 280px;
+        }
+
+        #controls-panel {
+            bottom: 20px;
+            left: 20px;
+            width: 280px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40px;
+            height: 40px;
+            transform: translate(-50%, -50%);
+            border: 2px solid rgba(0, 240, 255, 0.4);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(0, 240, 255, 0.6);
+        }
+        #crosshair::before { top: 19px; left: 0; width: 40px; height: 2px; }
+        #crosshair::after { top: 0; left: 19px; width: 2px; height: 40px; }
+
+        h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #00f0ff;
+            padding-bottom: 5px;
+            color: #fff;
+            text-shadow: 0 0 5px #00f0ff;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .status-val {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .btn {
+            background: #003366;
+            color: #00f0ff;
+            border: 1px solid #00f0ff;
+            padding: 8px 12px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 5px;
+            font-weight: bold;
+            transition: all 0.3s;
+            text-transform: uppercase;
+        }
+        .btn:hover {
+            background: #00f0ff;
+            color: #000;
+            box-shadow: 0 0 10px #00f0ff;
+        }
+
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #020208;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #00f0ff;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(0, 240, 255, 0.1);
+            border-radius: 50%;
+            border-top-color: #00f0ff;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #log-box {
+            color: #ffaa00;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 10px;
+            max-height: 60px;
+            overflow-y: auto;
         }
     </style>
 </head>
 <body>
 
-    <div id="info">
-        宇宙戦艦ヤマト MMDローダーテスト<br>
-        ・ドラッグ: カメラ回転<br>
-        ・ホイール: ズーム
+    <!-- 読み込み画面 -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <div id="loading-text" style="font-size: 18px; letter-spacing: 2px;">宇宙戦艦ヤマト 起動準備中...</div>
+        <div id="loading-progress" style="margin-top: 10px; font-size: 14px;">進行度: 0%</div>
     </div>
 
-    <!-- 1. Import maps を使ってライブラリのパスを定義 -->
+    <!-- 照準線 -->
+    <div id="crosshair"></div>
+
+    <div id="ui-container">
+        <!-- HUD ステータスパネル -->
+        <div id="info-panel" class="hud-panel">
+            <h3>YAMATO HUD v1.0</h3>
+            <div class="status-row">
+                <span>波動エンジン:</span>
+                <span id="engine-status" class="status-val" style="color: #00ff88;">ONLINE</span>
+            </div>
+            <div class="status-row">
+                <span>巡航速度:</span>
+                <span id="speed-val" class="status-val">0 宇宙ノット</span>
+            </div>
+            <div class="status-row">
+                <span>敵ガミラス艦数:</span>
+                <span id="enemy-count" class="status-val" style="color: #ff3333;">3</span>
+            </div>
+            <button class="btn" id="fire-btn">主砲ショックカノン発発射</button>
+            <div id="log-box">システム正常稼働中...</div>
+        </div>
+
+        <!-- コントロール説明パネル -->
+        <div id="controls-panel" class="hud-panel">
+            <h3>戦艦操縦マニュアル</h3>
+            <div>[ W ] キー : 前進加速</div>
+            <div>[ S ] キー : 後退 / 減速</div>
+            <div>[ A ] / [ D ] キー : 左右旋回 (Yaw)</div>
+            <div>[ R ] / [ F ] キー : 上昇 / 下降 (Pitch)</div>
+            <div>[ スペース ] キー : 主砲発射 (ショックカノン)</div>
+        </div>
+    </div>
+
+    <!-- Import Maps でライブラリを一括読込 -->
     <script type="importmap">
       {
         "imports": {
@@ -43,107 +203,235 @@
       }
     </script>
 
-    <!-- 2. メインの処理（ESモジュール） -->
     <script type="module">
         import * as THREE from 'three';
         import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        let scene, camera, renderer, controls;
+        let scene, camera, renderer;
+        let yamatoMesh = null;
+        let starsField;
+        
+        // 宇宙の慣性航行用パラメータ
+        let speed = 0;
+        const maxSpeed = 2.5;
+        const acceleration = 0.03;
+        const friction = 0.985; // 宇宙用の微小な減速慣性
+        
+        const keys = { w: false, s: false, a: false, d: false, r: false, f: false, space: false };
+        const lasers = [];
+        const enemies = [];
+        
+        function gameLog(text, color = '#ffaa00') {
+            const box = document.getElementById('log-box');
+            if (box) {
+                box.innerHTML = text;
+                box.style.color = color;
+            }
+        }
 
         init();
         animate();
 
         function init() {
-            // シーンの作成
+            // シーンと宇宙の霧効果
             scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x020208, 0.0015);
 
-            // 宇宙の背景（簡易的に星空を作る）
-            createSpaceBackground();
+            // カメラをヤマト追従用の三人称視点（TPS）に設定
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 15, -60);
 
-            // カメラの設定（視野角, アスペクト比, ニア, ファー）
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
-            camera.position.set(0, 30, 100); // 初期カメラ位置
-
-            // レンダラーの設定
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.shadowMap.enabled = true; // 影を有効化
             document.body.appendChild(renderer.domElement);
 
-            // マウスでカメラを動かせるようにする（OrbitControls）
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.target.set(0, 10, 0);
-            controls.update();
-
-            // ライティング（宇宙空間をイメージ）
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // 全体を薄暗く照らす
+            // 宇宙空間のライト
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2); // 主光源（太陽光のような強い光）
-            dirLight.position.set(100, 100, 50);
-            dirLight.castShadow = true;
-            scene.add(dirLight);
+            const sunLight = new THREE.DirectionalLight(0xddeeff, 1.5);
+            sunLight.position.set(200, 400, 300);
+            scene.add(sunLight);
 
-            // MMDモデル（.pmx）の読み込み
+            // 各種アセット・環境の構築
+            createSpaceBackground();
+            createGamilasEnemies();
+
+            // MMDLoaderで txt 拡張子にしたモデルをロード
             const loader = new MMDLoader();
-            const modelPath = 'models/yamato.pmx'; // 読み込むファイルのパス
+            const modelPath = 'models/yamato.txt'; 
 
-            console.log('MMDモデルを読み込み中...');
+            gameLog("Vercel用バイナリ解析中...", "#00f0ff");
+
             loader.load(
                 modelPath,
                 function (mesh) {
-                    // 読み込み成功時の処理
-                    mesh.castShadow = true;
-                    mesh.receiveShadow = true;
-                    scene.add(mesh);
-                    console.log('読み込み成功！');
+                    yamatoMesh = mesh;
+                    // MMDの正面（Zマイナス）をゲームの進行方向（Zプラス）に反転調整
+                    yamatoMesh.rotation.y = Math.PI; 
+                    scene.add(yamatoMesh);
+
+                    // ロード完了で画面を遷移
+                    document.getElementById('loading-screen').style.display = 'none';
+                    gameLog("波動エンジン始動。いつでも発進できます！", "#00ff88");
                 },
                 function (xhr) {
-                    // 読み込み中の進捗表示
                     if (xhr.total > 0) {
                         const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                        console.log(`進行度: ${percent}%`);
+                        document.getElementById('loading-progress').innerText = `進行度: ${percent}%`;
                     }
                 },
                 function (error) {
-                    // エラー時の処理
-                    console.error('モデルの読み込みに失敗しました。パスやファイル名を確認してください。', error);
+                    console.error(error);
+                    document.getElementById('loading-text').innerHTML = 
+                        "<span style='color:#ff3333;'>パース構造エラー</span><br><br>" +
+                        "ファイルが完全に .txt になっていないか、破損しています。<br>" +
+                        "models/yamato.pmx の名前を <strong>yamato.txt</strong> に変えたか再確認してください。";
                 }
             );
 
-            // 画面サイズ変更への対応
+            // キーボード操作のバインド
+            window.addEventListener('keydown', (e) => handleKeys(e, true));
+            window.addEventListener('keyup', (e) => handleKeys(e, false));
             window.addEventListener('resize', onWindowResize);
+            document.getElementById('fire-btn').addEventListener('click', () => fireShockCannon());
         }
 
-        // 簡易的な星空（パーティクル）を作る関数
+        // 満天の星空パーティクル
         function createSpaceBackground() {
             const starsGeometry = new THREE.BufferGeometry();
-            const starsCount = 2000;
+            const starsCount = 3000;
             const positions = new Float32Array(starsCount * 3);
 
             for (let i = 0; i < starsCount * 3; i++) {
-                positions[i] = (Math.random() - 0.5) * 1500; // 広範囲に星を散りばめる
+                positions[i] = (Math.random() - 0.5) * 1800;
             }
 
             starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5 });
-            const starField = new THREE.Points(starsGeometry, starsMaterial);
-            scene.add(starField);
+            const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 1.8, transparent: true, opacity: 0.8 });
+            starsField = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starsField);
         }
 
-        // ウィンドウのリサイズ処理
+        // 標的となるガミラス艦隊（ダミーの超巨大要塞キューブ）
+        function createGamilasEnemies() {
+            const enemyGeo = new THREE.BoxGeometry(20, 10, 35);
+            const enemyMat = new THREE.MeshPhongMaterial({ color: 0x0a3f25, emissive: 0xff2222, emissiveIntensity: 0.4 });
+
+            for (let i = 0; i < 3; i++) {
+                const enemy = new THREE.Mesh(enemyGeo, enemyMat);
+                enemy.position.set((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 60, 300 + (i * 180));
+                scene.add(enemy);
+                enemies.push(enemy);
+            }
+        }
+
+        function handleKeys(event, isDown) {
+            const key = event.key.toLowerCase();
+            if (key === 'w' || key === 'arrowup') keys.w = isDown;
+            if (key === 's' || key === 'arrowdown') keys.s = isDown;
+            if (key === 'a' || key === 'arrowleft') keys.a = isDown;
+            if (key === 'd' || key === 'arrowright') keys.d = isDown;
+            if (key === 'r') keys.r = isDown;
+            if (key === 'f') keys.f = isDown;
+            
+            if (key === ' ' && isDown && !keys.space) {
+                fireShockCannon();
+                keys.space = true;
+            }
+            if (key === ' ' && !isDown) keys.space = false;
+        }
+
+        // 主砲発射処理
+        function fireShockCannon() {
+            if (!yamatoMesh) return;
+
+            const laserGeo = new THREE.CylinderGeometry(0.5, 0.5, 20, 4);
+            laserGeo.rotateX(Math.PI / 2);
+            const laserMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+            const laser = new THREE.Mesh(laserGeo, laserMat);
+
+            // ヤマトの艦橋前方の主砲塔の高さからビームを出す調整
+            laser.position.copy(yamatoMesh.position);
+            laser.position.y += 6; 
+            
+            const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(yamatoMesh.quaternion);
+            
+            laser.userData = { dir: direction, speed: 7.5, life: 100 };
+            scene.add(laser);
+            lasers.push(laser);
+            gameLog("主砲ショックカノン発射！！", "#00ffff");
+        }
+
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // ループ処理（描画）
+        // 毎フレームのアップデート
         function animate() {
             requestAnimationFrame(animate);
-            controls.update(); // カメラ操作の更新
+
+            if (yamatoMesh) {
+                // 1. 加速・減速と宇宙の慣性航行
+                if (keys.w) speed += acceleration;
+                if (keys.s) speed -= acceleration;
+                speed *= friction; 
+                
+                document.getElementById('speed-val').innerText = `${Math.abs(Math.round(speed * 120))} 宇宙ノット`;
+
+                // 2. キー入力に応じた旋回（Yaw）と仰角（Pitch）制御
+                if (keys.a) yamatoMesh.rotation.y += 0.025;
+                if (keys.d) yamatoMesh.rotation.y -= 0.025;
+                if (keys.r) yamatoMesh.rotation.x += 0.018;
+                if (keys.f) yamatoMesh.rotation.x -= 0.018;
+
+                // 3. 移動計算
+                const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(yamatoMesh.quaternion);
+                yamatoMesh.position.addScaledVector(forward, speed);
+
+                // 4. 三人称シネマティックカメラの滑らかな追従
+                const relativeOffset = new THREE.Vector3(0, 14, -65);
+                const cameraOffset = relativeOffset.applyQuaternion(yamatoMesh.quaternion);
+                camera.position.copy(yamatoMesh.position).add(cameraOffset);
+                
+                const lookTarget = new THREE.Vector3(0, 6, 50).applyQuaternion(yamatoMesh.quaternion);
+                camera.lookAt(yamatoMesh.position.clone().add(lookTarget));
+            }
+
+            // 5. ビームの飛行と敵との衝突判定
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                const l = lasers[i];
+                l.position.addScaledVector(l.userData.dir, l.userData.speed);
+                l.userData.life--;
+
+                // 各敵との距離チェック（当たり判定）
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const e = enemies[j];
+                    if (l.position.distanceTo(e.position) < 22) {
+                        scene.remove(e);
+                        enemies.splice(j, 1);
+                        scene.remove(l);
+                        lasers.splice(i, 1);
+                        gameLog("命中！ガミラス艦の爆沈を確認！", "#ff3333");
+                        document.getElementById('enemy-count').innerText = enemies.length;
+                        break;
+                    }
+                }
+
+                if (l.userData.life <= 0 && lasers.includes(l)) {
+                    scene.remove(l);
+                    lasers.splice(i, 1);
+                }
+            }
+
+            // 移動中のスピード感を出す背景回転
+            if (starsField && Math.abs(speed) > 0.1) {
+                starsField.rotation.z += 0.0003;
+            }
+
             renderer.render(scene, camera);
         }
     </script>

@@ -165,7 +165,7 @@
     <div id="ui-container">
         <!-- HUD ステータスパネル -->
         <div id="info-panel" class="hud-panel">
-            <h3>YAMATO HUD v1.0</h3>
+            <h3>YAMATO HUD v1.1</h3>
             <div class="status-row">
                 <span>波動エンジン:</span>
                 <span id="engine-status" class="status-val" style="color: #00ff88;">ONLINE</span>
@@ -178,8 +178,8 @@
                 <span>敵ガミラス艦数:</span>
                 <span id="enemy-count" class="status-val" style="color: #ff3333;">3</span>
             </div>
-            <button class="btn" id="fire-btn">主砲ショックカノン発発射</button>
-            <div id="log-box">システム正常稼働中...</div>
+            <button class="btn" id="fire-btn">主砲ショックカノン発射</button>
+            <div id="log-box">Googleドライブ直リンク接続中...</div>
         </div>
 
         <!-- コントロール説明パネル -->
@@ -193,7 +193,7 @@
         </div>
     </div>
 
-    <!-- Import Maps でライブラリを一括読込 -->
+    <!-- Import Maps -->
     <script type="importmap">
       {
         "imports": {
@@ -211,11 +211,10 @@
         let yamatoMesh = null;
         let starsField;
         
-        // 宇宙の慣性航行用パラメータ
         let speed = 0;
         const maxSpeed = 2.5;
         const acceleration = 0.03;
-        const friction = 0.985; // 宇宙用の微小な減速慣性
+        const friction = 0.985;
         
         const keys = { w: false, s: false, a: false, d: false, r: false, f: false, space: false };
         const lasers = [];
@@ -233,11 +232,9 @@
         animate();
 
         function init() {
-            // シーンと宇宙の霧効果
             scene = new THREE.Scene();
             scene.fog = new THREE.FogExp2(0x020208, 0.0015);
 
-            // カメラをヤマト追従用の三人称視点（TPS）に設定
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
             camera.position.set(0, 15, -60);
 
@@ -246,35 +243,34 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            // 宇宙空間のライト
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
             scene.add(ambientLight);
 
             const sunLight = new THREE.DirectionalLight(0xddeeff, 1.5);
             sunLight.position.set(200, 400, 300);
             scene.add(sunLight);
 
-            // 各種アセット・環境の構築
             createSpaceBackground();
             createGamilasEnemies();
 
-            // MMDLoaderで txt 拡張子にしたモデルをロード
+            // MMDLoaderの初期化
             const loader = new MMDLoader();
-            const modelPath = 'models/yamato.pmx'; 
+            
+            // Googleドライブのダウンロード直リンクURL
+            // 末尾に「&file=.pmx」をくっつけることで、Three.jsが「あ、これはPMXファイルだね」と安全に納得します
+            const modelPath = 'https://docs.google.com/uc?export=download&id=1YqrUFp4vrjZgIyTxD2z3Dg09B9k1K0aq&file=.pmx'; 
 
-            gameLog("Vercel用バイナリ解析中...", "#00f0ff");
+            gameLog("外部ストレージよりデータ抽出中...", "#00f0ff");
 
             loader.load(
                 modelPath,
                 function (mesh) {
                     yamatoMesh = mesh;
-                    // MMDの正面（Zマイナス）をゲームの進行方向（Zプラス）に反転調整
-                    yamatoMesh.rotation.y = Math.PI; 
+                    yamatoMesh.rotation.y = Math.PI; // 後ろを向いているのを正面に変更
                     scene.add(yamatoMesh);
 
-                    // ロード完了で画面を遷移
                     document.getElementById('loading-screen').style.display = 'none';
-                    gameLog("波動エンジン始動。いつでも発進できます！", "#00ff88");
+                    gameLog("波動エンジン始動。ヤマト発進します！", "#00ff88");
                 },
                 function (xhr) {
                     if (xhr.total > 0) {
@@ -285,20 +281,17 @@
                 function (error) {
                     console.error(error);
                     document.getElementById('loading-text').innerHTML = 
-                        "<span style='color:#ff3333;'>パース構造エラー</span><br><br>" +
-                        "ファイルが完全に .txt になっていないか、破損しています。<br>" +
-                        "models/yamato.pmx の名前を <strong>yamato.txt</strong> に変えたか再確認してください。";
+                        "<span style='color:#ff3333;'>読み込み失敗</span><br><br>" +
+                        "Googleドライブ側の共有権限が「リンクを知っている全員」になっているか確認してください。";
                 }
             );
 
-            // キーボード操作のバインド
             window.addEventListener('keydown', (e) => handleKeys(e, true));
             window.addEventListener('keyup', (e) => handleKeys(e, false));
             window.addEventListener('resize', onWindowResize);
             document.getElementById('fire-btn').addEventListener('click', () => fireShockCannon());
         }
 
-        // 満天の星空パーティクル
         function createSpaceBackground() {
             const starsGeometry = new THREE.BufferGeometry();
             const starsCount = 3000;
@@ -314,14 +307,13 @@
             scene.add(starsField);
         }
 
-        // 標的となるガミラス艦隊（ダミーの超巨大要塞キューブ）
         function createGamilasEnemies() {
-            const enemyGeo = new THREE.BoxGeometry(20, 10, 35);
-            const enemyMat = new THREE.MeshPhongMaterial({ color: 0x0a3f25, emissive: 0xff2222, emissiveIntensity: 0.4 });
+            const enemyGeo = new THREE.BoxGeometry(25, 12, 40);
+            const enemyMat = new THREE.MeshPhongMaterial({ color: 0x0a3f25, emissive: 0xff1111, emissiveIntensity: 0.4 });
 
             for (let i = 0; i < 3; i++) {
                 const enemy = new THREE.Mesh(enemyGeo, enemyMat);
-                enemy.position.set((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 60, 300 + (i * 180));
+                enemy.position.set((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 60, 300 + (i * 200));
                 scene.add(enemy);
                 enemies.push(enemy);
             }
@@ -343,7 +335,6 @@
             if (key === ' ' && !isDown) keys.space = false;
         }
 
-        // 主砲発射処理
         function fireShockCannon() {
             if (!yamatoMesh) return;
 
@@ -352,13 +343,12 @@
             const laserMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
             const laser = new THREE.Mesh(laserGeo, laserMat);
 
-            // ヤマトの艦橋前方の主砲塔の高さからビームを出す調整
             laser.position.copy(yamatoMesh.position);
             laser.position.y += 6; 
             
             const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(yamatoMesh.quaternion);
             
-            laser.userData = { dir: direction, speed: 7.5, life: 100 };
+            laser.userData = { dir: direction, speed: 8.0, life: 100 };
             scene.add(laser);
             lasers.push(laser);
             gameLog("主砲ショックカノン発射！！", "#00ffff");
@@ -370,29 +360,24 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // 毎フレームのアップデート
         function animate() {
             requestAnimationFrame(animate);
 
             if (yamatoMesh) {
-                // 1. 加速・減速と宇宙の慣性航行
                 if (keys.w) speed += acceleration;
                 if (keys.s) speed -= acceleration;
                 speed *= friction; 
                 
                 document.getElementById('speed-val').innerText = `${Math.abs(Math.round(speed * 120))} 宇宙ノット`;
 
-                // 2. キー入力に応じた旋回（Yaw）と仰角（Pitch）制御
                 if (keys.a) yamatoMesh.rotation.y += 0.025;
                 if (keys.d) yamatoMesh.rotation.y -= 0.025;
                 if (keys.r) yamatoMesh.rotation.x += 0.018;
                 if (keys.f) yamatoMesh.rotation.x -= 0.018;
 
-                // 3. 移動計算
                 const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(yamatoMesh.quaternion);
                 yamatoMesh.position.addScaledVector(forward, speed);
 
-                // 4. 三人称シネマティックカメラの滑らかな追従
                 const relativeOffset = new THREE.Vector3(0, 14, -65);
                 const cameraOffset = relativeOffset.applyQuaternion(yamatoMesh.quaternion);
                 camera.position.copy(yamatoMesh.position).add(cameraOffset);
@@ -401,21 +386,19 @@
                 camera.lookAt(yamatoMesh.position.clone().add(lookTarget));
             }
 
-            // 5. ビームの飛行と敵との衝突判定
             for (let i = lasers.length - 1; i >= 0; i--) {
                 const l = lasers[i];
                 l.position.addScaledVector(l.userData.dir, l.userData.speed);
                 l.userData.life--;
 
-                // 各敵との距離チェック（当たり判定）
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const e = enemies[j];
-                    if (l.position.distanceTo(e.position) < 22) {
+                    if (l.position.distanceTo(e.position) < 25) {
                         scene.remove(e);
                         enemies.splice(j, 1);
                         scene.remove(l);
                         lasers.splice(i, 1);
-                        gameLog("命中！ガミラス艦の爆沈を確認！", "#ff3333");
+                        gameLog("命中！目標の完全消滅を確認！", "#ff3333");
                         document.getElementById('enemy-count').innerText = enemies.length;
                         break;
                     }
@@ -427,7 +410,6 @@
                 }
             }
 
-            // 移動中のスピード感を出す背景回転
             if (starsField && Math.abs(speed) > 0.1) {
                 starsField.rotation.z += 0.0003;
             }

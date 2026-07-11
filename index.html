@@ -2,31 +2,45 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Yamato Turret Master</title>
+    <title>Yamato Advanced Fire Control System</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; color: #00ffea; font-family: monospace; }
+        body { margin: 0; overflow: hidden; background-color: #000; color: #00ffea; font-family: 'Share Tech Mono', monospace; }
         #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        /* 左側：砲塔選択ボタン */
-        #turret-btns { position: absolute; left: 20px; top: 100px; display: flex; flex-direction: column; gap: 5px; pointer-events: auto; }
-        /* 右側：全ボーンリスト（ここを見て名前を確認！） */
-        #bone-list { position: absolute; right: 10px; top: 10px; width: 250px; height: 80vh; background: rgba(0,20,20,0.8); border: 1px solid #00ffea; overflow-y: scroll; pointer-events: auto; font-size: 11px; padding: 5px; }
-        .ui-btn { background: rgba(0, 40, 40, 0.8); border: 1px solid #00ffea; color: #00ffea; padding: 10px; cursor: pointer; text-align: left; }
-        .active { background: #00ffea; color: #000; font-weight: bold; }
-        #status { position: absolute; bottom: 20px; width: 100%; text-align: center; font-size: 16px; background: rgba(0,0,0,0.5); }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; color: white; }
+        
+        /* 砲塔選択ボタン */
+        #selector { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
+        .ui-btn { background: rgba(0, 30, 30, 0.8); border: 1px solid #00ffea; color: #00ffea; padding: 12px; cursor: pointer; width: 140px; text-align: left; font-size: 14px; transition: 0.2s; }
+        .ui-btn:hover { background: rgba(0, 255, 234, 0.2); }
+        .active { background: #00ffea !important; color: #000 !important; font-weight: bold; box-shadow: 0 0 15px #00ffea; }
+
+        /* 照準とステータス */
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border: 1px solid rgba(0, 255, 234, 0.5); border-radius: 50%; pointer-events: none; }
+        #bottom-bar { position: absolute; bottom: 30px; width: 100%; text-align: center; }
+        #ammo-display { font-size: 24px; text-shadow: 0 0 10px #00ffea; margin-bottom: 5px; }
+        #control-info { font-size: 12px; color: #888; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; }
     </style>
 </head>
 <body>
 
-<div id="loading">ヤマト解析中...</div>
+<div id="loading">火器管制システム 起動中...</div>
 
 <div id="ui">
-    <div id="bone-list">【ボーン名一覧（ここをチェック！）】<br></div>
-    <div id="turret-btns">
-        <button class="ui-btn active" id="btn-none">全艦移動モード</button>
+    <div id="crosshair"></div>
+    <div id="selector">
+        <button class="ui-btn active" onclick="setTurret(-1)">全艦移動モード</button>
+        <button class="ui-btn" onclick="setTurret(0)">第一主砲</button>
+        <button class="ui-btn" onclick="setTurret(1)">第二主砲</button>
+        <button class="ui-btn" onclick="setTurret(2)">第三主砲</button>
+        <button class="ui-btn" onclick="setTurret(3)">第一副砲</button>
+        <button class="ui-btn" onclick="setTurret(4)">第二副砲</button>
+        <button class="ui-btn" onclick="setTurret(5)">第四主砲</button>
     </div>
-    <div id="status">
-        [マウスホイール] 砲塔を回す / ズーム | [F] ショックカノン発射 | [W/A/S/D] 操艦
+    <div id="bottom-bar">
+        <div id="ammo-display">弾種: <span id="ammo-name">ショックカノン</span></div>
+        <div id="control-info">
+            [ホイール] 左右旋回 | [マウス上下] 仰角操作 | [X] 弾種切替 | [F] 発射 | [W/A/S/D] 移動
+        </div>
     </div>
 </div>
 
@@ -44,10 +58,13 @@
     import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 
     let scene, camera, renderer, yamato;
-    let speed = 0, camDist = 2000;
+    let speed = 0, camDist = 2000, mouseLineY = 0;
     const keys = {}, bullets = [];
-    let turretBones = []; // プログラムが見つけた砲塔ボーン
+    
+    // 砲塔データ構造
+    let turrets = []; // { base: Bone, barrels: [Bones] }
     let activeIdx = -1;
+    let ammoType = 0; // 0:Shock, 1:Type3
 
     init();
     animate();
@@ -73,87 +90,88 @@
 
         loader.load('models/yamato.pmx', (mesh) => {
             yamato = mesh;
-            yamato.scale.set(20, 20, 20); // 巨大化
+            yamato.scale.set(25, 25, 25);
             scene.add(yamato);
             
-            const boneListEl = document.getElementById('bone-list');
-            const btnContainer = document.getElementById('turret-btns');
-
-            // --- 【ボーン全スキャン】 ---
-            yamato.skeleton.bones.forEach((bone, index) => {
-                // 1. 全てのボーン名を右側のリストに表示（確認用）
-                const line = document.createElement('div');
-                line.innerText = `${index}: ${bone.name}`;
-                line.style.cursor = "pointer";
-                line.onclick = () => console.log("Selected Bone:", bone.name);
-                boneListEl.appendChild(line);
-
-                // 2. 「砲」や「turret」が含まれるボーンを自動でボタンにする
-                const n = bone.name;
-                if ((n.includes("砲") || n.includes("Turret") || n.includes("塔")) && !n.includes("身") && !n.includes("先")) {
-                    addTurretButton(bone, n);
+            // 砲塔と砲身の紐付け
+            const turretNames = ["第一主砲", "第二主砲", "第三主砲", "第一副砲", "第二副砲", "第四主砲"];
+            
+            turretNames.forEach(name => {
+                const base = yamato.skeleton.bones.find(b => b.name.includes(name) && !b.name.includes("砲身"));
+                if(base) {
+                    // その砲塔に属する砲身（上下パーツ）をすべて探す
+                    const barrels = yamato.skeleton.bones.filter(b => b.name.includes(name) && b.name.includes("砲身"));
+                    turrets.push({ base, barrels });
                 }
             });
-
-            function addTurretButton(bone, name) {
-                const idx = turretBones.length;
-                turretBones.push(bone);
-                const btn = document.createElement('button');
-                btn.className = 'ui-btn';
-                btn.innerText = name;
-                btn.onclick = () => {
-                    activeIdx = idx;
-                    document.querySelectorAll('.ui-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                };
-                btnContainer.appendChild(btn);
-            }
-
-            document.getElementById('btn-none').onclick = () => {
-                activeIdx = -1;
-                document.querySelectorAll('.ui-btn').forEach(b => b.classList.remove('active'));
-                document.getElementById('btn-none').classList.add('active');
-            };
 
             document.getElementById('loading').style.display = 'none';
         });
 
-        // スクロールで回転
+        // マウス上下移動で仰角
+        window.addEventListener('mousemove', (e) => {
+            mouseLineY = (e.clientY / window.innerHeight) * 2 - 1; // -1 to 1
+        });
+
+        // ホイールで旋回
         window.addEventListener('wheel', (e) => {
-            if (activeIdx === -1) {
-                camDist += e.deltaY * 2;
-            } else if (turretBones[activeIdx]) {
-                // ここで直接ボーンを回転させる
-                turretBones[activeIdx].rotation.y -= e.deltaY * 0.002;
+            if (activeIdx !== -1 && turrets[activeIdx]) {
+                turrets[activeIdx].base.rotation.y -= e.deltaY * 0.001;
+            } else {
+                camDist += e.deltaY;
             }
         }, { passive: true });
 
-        window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='KeyF') fire(); });
+        window.addEventListener('keydown', e => {
+            keys[e.code] = true;
+            if(e.code === 'KeyX') switchAmmo();
+            if(e.code === 'KeyF') fire();
+        });
         window.addEventListener('keyup', e => keys[e.code] = false);
+
+        window.setTurret = (idx) => {
+            activeIdx = idx;
+            document.querySelectorAll('.ui-btn').forEach((b, i) => b.classList.toggle('active', i - 1 === idx));
+        };
+    }
+
+    function switchAmmo() {
+        ammoType = (ammoType + 1) % 2;
+        const name = document.getElementById('ammo-name');
+        name.innerText = ammoType === 0 ? "ショックカノン" : "三式融合弾";
+        name.style.color = ammoType === 0 ? "#00ffff" : "#ffaa00";
     }
 
     function fire() {
         if (!yamato) return;
-        const targets = (activeIdx === -1) ? turretBones : [turretBones[activeIdx]];
-        targets.forEach(bone => {
-            const geo = new THREE.CylinderGeometry(10, 10, 300, 8);
-            geo.rotateX(Math.PI/2);
-            const bullet = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: 0x00ffff}));
-            const worldPos = new THREE.Vector3();
-            const worldQuat = new THREE.Quaternion();
-            bone.getWorldPosition(worldPos);
-            bone.getWorldQuaternion(worldQuat);
-            bullet.position.copy(worldPos);
-            bullet.quaternion.copy(worldQuat);
-            bullet.userData.life = 100;
-            bullets.push(bullet);
-            scene.add(bullet);
+        const activeTurrets = activeIdx === -1 ? turrets : [turrets[activeIdx]];
+        
+        activeTurrets.forEach(t => {
+            t.barrels.forEach(barrel => {
+                const isShock = (ammoType === 0);
+                const geo = isShock ? new THREE.CylinderGeometry(8, 8, 300, 8) : new THREE.SphereGeometry(15, 8, 8);
+                if(isShock) geo.rotateX(Math.PI/2);
+                
+                const bullet = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: isShock ? 0x00ffff : 0xffaa00}));
+                
+                const worldPos = new THREE.Vector3();
+                const worldQuat = new THREE.Quaternion();
+                barrel.getWorldPosition(worldPos);
+                barrel.getWorldQuaternion(worldQuat);
+                
+                bullet.position.copy(worldPos);
+                bullet.quaternion.copy(worldQuat);
+                bullet.userData = { life: 150, velocity: isShock ? 200 : 100, type: ammoType };
+                
+                bullets.push(bullet);
+                scene.add(bullet);
+            });
         });
     }
 
     function createStars() {
         const v = [];
-        for(let i=0; i<10000; i++) v.push(THREE.MathUtils.randFloatSpread(100000),THREE.MathUtils.randFloatSpread(100000),THREE.MathUtils.randFloatSpread(100000));
+        for(let i=0; i<15000; i++) v.push(THREE.MathUtils.randFloatSpread(200000),THREE.MathUtils.randFloatSpread(200000),THREE.MathUtils.randFloatSpread(200000));
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
         scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xffffff, size:10})));
@@ -162,27 +180,39 @@
     function animate() {
         requestAnimationFrame(animate);
         if (yamato) {
-            if (keys['KeyW']) speed += 1.0;
+            if (keys['KeyW']) speed += 1.2;
             speed *= 0.96;
             yamato.translateZ(-speed);
             if (keys['KeyA']) yamato.rotation.y += 0.01;
             if (keys['KeyD']) yamato.rotation.y -= 0.01;
 
+            // 仰角（上下）の連動操作
+            if (activeIdx !== -1 && turrets[activeIdx]) {
+                const targetPitch = -mouseLineY * 0.8; // 最大仰角
+                turrets[activeIdx].barrels.forEach(b => {
+                    b.rotation.x = THREE.MathUtils.lerp(b.rotation.x, targetPitch, 0.1);
+                });
+            }
+
+            // カメラ
             if (activeIdx === -1) {
                 const offset = new THREE.Vector3(0, 500, camDist).applyMatrix4(yamato.matrixWorld);
                 camera.position.lerp(offset, 0.1);
                 camera.lookAt(yamato.position);
             } else {
-                const bone = turretBones[activeIdx];
-                const offset = new THREE.Vector3(0, 100, 300).applyMatrix4(bone.matrixWorld);
-                camera.position.lerp(offset, 0.1);
-                const look = new THREE.Vector3(0, 0, -2000).applyMatrix4(bone.matrixWorld);
+                const bone = turrets[activeIdx].base;
+                const offset = new THREE.Vector3(0, 100, 400).applyMatrix4(bone.matrixWorld);
+                camera.position.lerp(offset, 0.2);
+                const look = new THREE.Vector3(0, -mouseLineY * 500, -2000).applyMatrix4(bone.matrixWorld);
                 camera.lookAt(look);
             }
         }
+        
         for(let i=bullets.length-1; i>=0; i--) {
-            bullets[i].translateZ(-200);
-            if(--bullets[i].userData.life <= 0) { scene.remove(bullets[i]); bullets.splice(i,1); }
+            const b = bullets[i];
+            b.translateZ(-b.userData.velocity);
+            if(b.userData.type === 1) b.position.y -= 2; // 三式融合弾の重力落下
+            if(--b.userData.life <= 0) { scene.remove(b); bullets.splice(i,1); }
         }
         renderer.render(scene, camera);
     }

@@ -2,11 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>宇宙戦艦ヤマト Web Game - 復活版</title>
+    <title>宇宙戦艦ヤマト Web Game - パス修正版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
-        #gui { position: absolute; top: 10px; left: 10px; color: #00ff00; font-family: monospace; pointer-events: none; text-shadow: 1px 1px 2px black; }
+        #gui { position: absolute; top: 10px; left: 10px; color: #00ff00; font-family: monospace; pointer-events: none; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; }
     </style>
 </head>
@@ -15,7 +14,7 @@
     <div id="gui">
         WASD: 移動 | 矢印キー: 旋回<br>
         SPACE: 加速 | SHIFT: 減速<br>
-        <span id="pos-display">位置: 推定中</span>
+        <div id="debug" style="color: red;"></div>
     </div>
 
     <script type="importmap">
@@ -35,39 +34,32 @@
         const keys = {};
         let speed = 0;
 
+        // ★★★ 【ここをGitHubのフォルダ構成に合わせて書き換えてください】 ★★★
+        // 1. もし models フォルダの中なら 'models/yamato.pmx'
+        // 2. もし index.html と同じ場所なら 'yamato.pmx'
+        const MODEL_PATH = 'models/yamato.pmx'; 
+
         init();
         animate();
 
         function init() {
             scene = new THREE.Scene();
-
-            // --- 【調整ポイント1：カメラの見える距離】 ---
-            // 第3引数を 0.1 にして、近くにあるものも見えるようにしました。
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200000);
-            // 最初は少し離れた場所にカメラを置く
-            camera.position.set(0, 100, 300);
+            camera.position.set(0, 100, 500);
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-            scene.add(ambientLight);
-            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-            sun.position.set(100, 500, 100);
-            scene.add(sun);
-
+            scene.add(new THREE.AmbientLight(0xffffff, 1.0));
             createStars();
 
             const loader = new MMDLoader();
-            loader.load('yamato.pmx', (mesh) => {
+            console.log("読み込み開始:", MODEL_PATH);
+
+            loader.load(MODEL_PATH, (mesh) => {
                 yamato = mesh;
-                
-                // --- 【調整ポイント2：もしヤマトが小さすぎたら】 ---
-                // もし何も見えない場合は、下の 1 を 10 などに変えてみてください
-                yamato.scale.set(1, 1, 1); 
-                
                 scene.add(yamato);
                 document.getElementById('loading').style.display = 'none';
             }, 
@@ -76,8 +68,10 @@
                 document.getElementById('loading').innerText = `読み込み中: ${percent}%`;
             }, 
             (error) => {
-                console.error("エラー:", error);
-                document.getElementById('loading').innerText = "読み込み失敗。ファイル名を確認してください。";
+                console.error("エラー詳細:", error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('debug').innerText = 
+                    `エラー: ${MODEL_PATH} が見つかりません。\nGitHubのフォルダ名を確認してください。`;
             });
 
             window.addEventListener('keydown', (e) => keys[e.code] = true);
@@ -87,15 +81,14 @@
 
         function createStars() {
             const vertices = [];
-            for (let i = 0; i < 10000; i++) {
-                vertices.push(THREE.MathUtils.randFloatSpread(15000));
-                vertices.push(THREE.MathUtils.randFloatSpread(15000));
-                vertices.push(THREE.MathUtils.randFloatSpread(15000));
+            for (let i = 0; i < 5000; i++) {
+                vertices.push(THREE.MathUtils.randFloatSpread(10000));
+                vertices.push(THREE.MathUtils.randFloatSpread(10000));
+                vertices.push(THREE.MathUtils.randFloatSpread(10000));
             }
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            const material = new THREE.PointsMaterial({ color: 0xffffff, size: 2 });
-            scene.add(new THREE.Points(geometry, material));
+            scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 2 })));
         }
 
         function onWindowResize() {
@@ -106,45 +99,21 @@
 
         function animate() {
             requestAnimationFrame(animate);
-
             if (yamato) {
-                // スピード調整
                 if (keys['Space']) speed += 0.2;
                 if (keys['ShiftLeft']) speed -= 0.2;
                 speed *= 0.95; 
-
-                // 移動
                 yamato.translateZ(-speed);
-
-                // 回転
                 if (keys['ArrowLeft']) yamato.rotation.y += 0.03;
                 if (keys['ArrowRight']) yamato.rotation.y -= 0.03;
                 if (keys['ArrowUp']) yamato.rotation.x -= 0.02;
                 if (keys['ArrowDown']) yamato.rotation.x += 0.02;
                 
-                // WASD平行移動
-                if (keys['KeyA']) yamato.translateX(5);
-                if (keys['KeyD']) yamato.translateX(-5);
-                if (keys['KeyW']) yamato.translateY(5);
-                if (keys['KeyS']) yamato.translateY(-5);
-
-                // --- 【調整ポイント3：カメラの追従位置】 ---
-                // 第2引数：高さ（150） / 第3引数：後ろの距離（600）
-                // ヤマトが巨大なら、この600を 1500 くらいまで大きくしてください
                 const relativeCameraOffset = new THREE.Vector3(0, 150, 600);
-
                 const cameraOffset = relativeCameraOffset.applyMatrix4(yamato.matrixWorld);
-                
-                // lerpの第2引数を 1 にすると、遊びがなくなり「完全に固定」されます
-                // 画面がガクガクする場合は 0.1 くらいにしてください
-                camera.position.lerp(cameraOffset, 1); 
+                camera.position.lerp(cameraOffset, 0.1);
                 camera.lookAt(yamato.position);
-
-                // デバッグ用に現在の位置を表示
-                document.getElementById('pos-display').innerText = 
-                    `ヤマト位置: x:${Math.round(yamato.position.x)} y:${Math.round(yamato.position.y)} z:${Math.round(yamato.position.z)}`;
             }
-
             renderer.render(scene, camera);
         }
     </script>
